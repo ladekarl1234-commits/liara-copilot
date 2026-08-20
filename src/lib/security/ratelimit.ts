@@ -40,16 +40,21 @@ export function consume(key: string): { allowed: boolean; retryAfterSec?: number
     for (const [k, v] of buckets) if (now - v.last > 120_000) buckets.delete(k);
   }
 
-  if (!globalBucket) globalBucket = { tokens: capacity * GLOBAL_FACTOR, last: now };
-  const g = take(globalBucket, capacity * GLOBAL_FACTOR, now);
-  if (!g.allowed) return g;
-
+  // per-key bucket FIRST: a client the per-IP limiter rejects must not burn a
+  // global token, otherwise one throttled attacker drains the shared backstop
+  // and 429s everyone (availability DoS). Only a request that passes its own
+  // bucket may consume from the global spend backstop.
   let b = buckets.get(key);
   if (!b) {
     b = { tokens: capacity, last: now };
     buckets.set(key, b);
   }
-  return take(b, capacity, now);
+  const perKey = take(b, capacity, now);
+  if (!perKey.allowed) return perKey;
+
+  if (!globalBucket) globalBucket = { tokens: capacity * GLOBAL_FACTOR, last: now };
+  const g = take(globalBucket, capacity * GLOBAL_FACTOR, now);
+  return g.allowed ? perKey : g;
 }
 
 export function resetForTests(): void {

@@ -253,17 +253,30 @@ describe('orchestrator', () => {
     expect(wf.workflow.steps[0].status).toBe('current');
   });
 
-  it('never adopts an unknown caller-supplied session id (no hijack)', async () => {
+  it('never adopts an unknown caller-supplied id, even when other sessions exist', async () => {
     setProviderForTests(
       scriptedProvider(
         { intent: 'question', language: 'fa', action: 'answer', statePatch: {}, retrievalQueries: ['متغیر محیطی'], filters: {} },
         'پاسخ [1].',
       ),
     );
+    // seed a REAL session so the store is non-empty (otherwise "unknown id
+    // rejected" is trivially true because every id is unknown)
+    const seed = await run('سوال اول');
+    const realId = (seed.find((e) => e.type === 'session') as Extract<ChatEvent, { type: 'session' }>).sessionId;
+    expect(realId).toBeTruthy();
+
+    // an attacker supplies a DIFFERENT, guessed id → must not be adopted
     const attacker = 'victim00-guessed-id';
-    const events = await run('سلام سوال دارم', attacker);
-    const sid = (events.find((e) => e.type === 'session') as Extract<ChatEvent, { type: 'session' }>).sessionId;
-    expect(sid).not.toBe(attacker); // server minted a fresh UUID instead
+    const ev = await run('سلام سوال دارم', attacker);
+    const sid = (ev.find((e) => e.type === 'session') as Extract<ChatEvent, { type: 'session' }>).sessionId;
+    expect(sid).not.toBe(attacker); // fresh server UUID, not the attacker's id
+    expect(sid).not.toBe(realId); // and not someone else's live session
+
+    // sanity: a caller CAN still resume their OWN real id (functionality intact)
+    const resumed = await run('سوال دوم', realId);
+    const rid = (resumed.find((e) => e.type === 'session') as Extract<ChatEvent, { type: 'session' }>).sessionId;
+    expect(rid).toBe(realId);
   });
 
   it('remembers session context across turns', async () => {

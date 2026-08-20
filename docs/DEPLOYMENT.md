@@ -30,6 +30,7 @@ called out:
 | `MODEL_TIMEOUT_MS` / `MODEL_MAX_RETRIES` | no | tune to the provider's actual latency |
 | `COST_INPUT_PER_MTOK` / `COST_OUTPUT_PER_MTOK` | no | set to get `estimated_cost` in metrics |
 | `RATE_LIMIT_RPM` | no | tune to expected traffic per instance (single-instance bucket, see below) |
+| `TRUST_PROXY` | no | **set to `on` on Liara** — the platform LB overwrites `x-forwarded-for`, so per-client rate limiting needs it. Default `off` is fail-closed: a directly-exposed server would otherwise let a spoofed header mint a fresh bucket per request. |
 | `MAX_INPUT_CHARS` / `MAX_BODY_BYTES` | no | leave at defaults unless a specific need arises |
 | `DOCS_DIR` / `INDEX_DIR` / `RUNTIME_DIR` | no | filesystem paths; `RUNTIME_DIR` should point at a writable, ideally persistent, location |
 | `DIAG_ENABLED` | no | **leave unset** in production — defaults to off (see checklist) |

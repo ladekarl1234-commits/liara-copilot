@@ -65,6 +65,7 @@ describe('POST /api/chat', () => {
     resetIndexForTests();
     delete process.env.RATE_LIMIT_RPM;
     delete process.env.TRUST_PROXY;
+    delete process.env.MAX_BODY_BYTES; // must not leak a 200-byte cap into later tests
     resetConfigForTests();
   });
 
@@ -118,12 +119,29 @@ describe('POST /api/chat', () => {
     expect(blocked).toBe(true); // rotating sessionId did not evade the IP limit
   });
 
-  it('enforces the byte cap on the streamed body (413)', async () => {
+  it('enforces the byte cap on the STREAMED body (413) — not just content-length', async () => {
     process.env.MAX_BODY_BYTES = '200';
     resetConfigForTests();
-    const big = { message: 'x'.repeat(5000) };
-    const res = await POST(makeReq(big, { 'x-forwarded-for': '4.4.4.4' }));
+    // A streaming body with NO content-length header: the old header-only
+    // check would see len=0 and pass. Only real stream-byte counting returns
+    // 413 here, so this test fails if readJsonCapped is reverted.
+    const payload = new TextEncoder().encode(JSON.stringify({ message: 'x'.repeat(5000) }));
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(payload);
+        c.close();
+      },
+    });
+    const init = {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '4.4.4.4' },
+      body: stream,
+      duplex: 'half', // required by the Fetch spec when the body is a stream
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const req = new NextRequest('http://localhost/api/chat', init as any);
+    expect(req.headers.get('content-length')).toBeNull(); // proves the header path can't save us
+    const res = await POST(req);
     expect(res.status).toBe(413);
-    delete process.env.MAX_BODY_BYTES;
   });
 });

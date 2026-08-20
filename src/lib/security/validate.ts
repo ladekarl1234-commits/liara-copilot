@@ -58,7 +58,9 @@ export async function readJsonCapped(req: Request, maxBytes: number): Promise<un
       parts.push(value);
     }
   } finally {
-    reader.releaseLock();
+    // cancel (not just releaseLock) so an oversize/aborted upload stops
+    // arriving instead of streaming into a dropped socket
+    await reader.cancel().catch(() => {});
   }
   try {
     const buf = new Uint8Array(total);

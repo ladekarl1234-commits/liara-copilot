@@ -111,7 +111,7 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     retrieval = await search(
       plan.retrievalQueries.length ? plan.retrievalQueries : [message.slice(0, 200)],
       plan.filters,
-      { embedQuery },
+      { embedQuery, priorTurns: session.turns },
     );
 
     emit({ type: 'stage', stage: 'checking' });
@@ -224,7 +224,9 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     const totalLatencyMs = Date.now() - t0;
     logMetrics({
       requestId,
-      sessionId: session.id,
+      // hashed: the raw id is a session credential (getOrCreateSession resolves
+      // it), so it must never land in logs where it could be replayed
+      sessionId: crypto.createHash('sha256').update(session.id).digest('hex').slice(0, 12),
       intent,
       product: session.context.product,
       retrievalLatencyMs: retrieval?.latencyMs,

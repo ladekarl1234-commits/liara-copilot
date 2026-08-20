@@ -99,6 +99,7 @@ const MAX_EVIDENCE_CHARS = 7000;
 
 export interface SearchDeps {
   embedQuery?: (texts: string[]) => Promise<number[][]>; // present when vector search enabled
+  priorTurns?: number; // conversation depth — relaxes the all-stopword gate for follow-ups
 }
 
 export async function search(
@@ -197,7 +198,7 @@ export async function search(
   // strength + fusion margin), thresholds tuned on evals/cases via
   // `npm run evaluate:retrieval`; upgrade to a learned gate if eval demands it.
   const margin = fused.length > 1 ? fused[0].score / fused[1].score : fused.length ? 2 : 0;
-  const confidence = gateConfidence(fused.length, coverage, bestScorePerToken, margin);
+  const confidence = gateConfidence(fused.length, coverage, bestScorePerToken, margin, deps.priorTurns ?? 0);
 
   return {
     chunks: selected,
@@ -215,42 +216,57 @@ export async function search(
  * title/heading/text. Returns the best per-query ratio + that query's
  * informative token count.
  */
-export function exactCoverage(
-  queries: string[],
-  topChunks: ScoredChunk[],
-): { ratio: number; informative: number } {
-  if (!topChunks.length) return { ratio: 0, informative: 0 };
+export interface Coverage {
+  ratio: number; // matched / informative
+  informative: number; // count of informative (non-stopword) query tokens
+  matched: number; // absolute count that appear verbatim in the top chunks
+}
+
+export function exactCoverage(queries: string[], topChunks: ScoredChunk[]): Coverage {
+  if (!topChunks.length) return { ratio: 0, informative: 0, matched: 0 };
   const haystack = new Set(
     topChunks.flatMap((s) => tokenizeFa(`${s.chunk.title} ${s.chunk.heading ?? ''} ${s.chunk.text}`)),
   );
-  let best = { ratio: 0, informative: 0 };
+  let best: Coverage = { ratio: 0, informative: 0, matched: 0 };
   for (const q of queries) {
     const tokens = [...new Set(informativeTokens(q))];
     if (!tokens.length) continue;
     const matched = tokens.filter((t) => haystack.has(t)).length;
     const ratio = matched / tokens.length;
     if (ratio > best.ratio || (ratio === best.ratio && tokens.length > best.informative)) {
-      best = { ratio, informative: tokens.length };
+      best = { ratio, informative: tokens.length, matched };
     }
   }
   return best;
 }
 
-// Thresholds measured on evals/cases (see docs/EVALUATION.md): every
-// unsupported/adversarial case must come back 'low' (the orchestrator refuses
-// to answer on 'low'); ambiguous cases must not be 'high'. 'high'
-// additionally routes to the fast model and allows FAQ caching, so it is
-// deliberately conservative: it requires >=70% exact coverage of >=2
-// informative tokens. A query whose informative tokens are all absent from
-// the top evidence is 'low' regardless of BM25 score.
+// The gate is ONE of three defenses (gate → grounded answer model → claim
+// verification), not a topic classifier. A lexical index over 3,663 chunks
+// always returns *something*, and a query sharing ONE real Liara word with the
+// corpus ("cake recipe" matches nothing meaningful; "چطور دامنه وصل کنم"
+// matches "دامنه") is lexically indistinguishable from a legit one-concept
+// query — the two produce identical coverage signals (verified). Trying to
+// separate them at the gate wrongly refuses real questions, so that class is
+// deliberately left at 'medium', where the answer model (instructed to answer
+// only from evidence and otherwise say "not in the docs") is the real defense.
+// What the gate CAN do without false positives:
+//   - matched === 0 (no informative query token appears in the evidence at
+//     all): 'low' on a fresh turn — catches gibberish, all-stopword input,
+//     and genuinely off-vocabulary questions. 'medium' mid-conversation, where
+//     the planner's context-enriched queries carry the intent even when the
+//     raw message is all stopwords ("قدم بعدی چیست؟").
+//   - very low coverage (< 0.34) even with a match: 'low'.
+//   - 'high' (fast model + FAQ-cacheable) stays conservative: >=70% coverage of
+//     >=2 informative tokens, strong BM25 density, and a real margin.
 export function gateConfidence(
   resultCount: number,
-  coverage: { ratio: number; informative: number },
+  coverage: Coverage,
   scorePerToken: number,
   margin: number,
+  priorTurns = 0,
 ): RetrievalResult['confidence'] {
   if (!resultCount) return 'low';
-  if (coverage.informative === 0) return 'medium'; // pure-stopword follow-up: planner decides
+  if (coverage.matched === 0) return priorTurns > 0 ? 'medium' : 'low';
   if (coverage.ratio < 0.34) return 'low';
   if (coverage.ratio >= 0.7 && coverage.informative >= 2 && scorePerToken >= 25 && margin >= 1.05) return 'high';
   return 'medium';

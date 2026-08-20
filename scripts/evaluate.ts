@@ -82,7 +82,7 @@ interface CatAgg {
   confidence: Record<string, number>;
 }
 
-async function runRetrieval(cases: EvalCase[]) {
+async function runRetrieval(cases: EvalCase[], enforceFloors = true) {
   const idx = loadIndex();
   const perCat = new Map<string, CatAgg>();
   const agg = (cat: string): CatAgg => {
@@ -183,22 +183,29 @@ async function runRetrieval(cases: EvalCase[]) {
   writeResult('retrieval', summary);
 
   // regression floors: a retrieval regression must FAIL the run, not silently
-  // rewrite a JSON nobody diffs. GATE_MIN is 0.75, not higher, because two
-  // gate cases (an adversarial "delete another account" request and a Docker
-  // CRLF error) carry genuine Liara vocabulary and land at coverage 0.39/0.46
-  // — indistinguishable from 11 legitimate troubleshooting cases in the same
-  // band. The LEXICAL gate cannot separate them without wrongly refusing those
-  // 11; they are defended downstream (answer-prompt refusal + claim
-  // verification), measured in --answers mode. See docs/EVALUATION.md.
-  const HIT5_MIN = 0.6;
-  const GATE_MIN = 0.75;
-  if (summary.hit5 < HIT5_MIN) {
-    console.error(`FAIL: hit@5 ${summary.hit5.toFixed(3)} below floor ${HIT5_MIN}`);
-    process.exitCode = 1;
-  }
-  if (summary.gateAccuracy !== null && summary.gateAccuracy < GATE_MIN) {
-    console.error(`FAIL: gate-accuracy ${summary.gateAccuracy.toFixed(3)} below floor ${GATE_MIN}`);
-    process.exitCode = 1;
+  // rewrite a JSON nobody diffs. Floors sit just under the measured values
+  // (hit@5 0.708, gate 0.778) so a real drop trips them while normal noise
+  // does not. Only applied to a FULL run — a filtered subset (--category /
+  // --limit) has too few cases for the ratios to mean anything.
+  //
+  // GATE_MIN is 0.75 (allows the current 7/9, fails at 6/9), not higher,
+  // because two gate cases — an adversarial "delete another account's
+  // resources" request and a Docker CRLF error — carry genuine Liara
+  // vocabulary and are lexically indistinguishable from ~11 legitimate
+  // troubleshooting cases (measured). They are ACCEPTED DEBT, defended
+  // downstream (answer-prompt safety refusal + claim verification), not by the
+  // lexical gate. See specs/spec.md AC9 and docs/EVALUATION.md.
+  if (enforceFloors) {
+    const HIT5_MIN = 0.66;
+    const GATE_MIN = 0.75;
+    if (summary.hit5 < HIT5_MIN) {
+      console.error(`FAIL: hit@5 ${summary.hit5.toFixed(3)} below floor ${HIT5_MIN}`);
+      process.exitCode = 1;
+    }
+    if (summary.gateAccuracy !== null && summary.gateAccuracy < GATE_MIN) {
+      console.error(`FAIL: gate-accuracy ${summary.gateAccuracy.toFixed(3)} below floor ${GATE_MIN}`);
+      process.exitCode = 1;
+    }
   }
 
   console.log(
@@ -384,7 +391,12 @@ async function main() {
   console.log(`${cases.length} cases loaded${args.category ? ` (category=${args.category})` : ''}`);
 
   if (args.answers) await runAnswers(cases);
-  else await runRetrieval(cases);
+  else {
+    // enforce regression floors only on a FULL run — a filtered subset
+    // (--category / --limit) has too few cases and would trip spuriously
+    const fullRun = !args.category && !Number.isFinite(args.limit);
+    await runRetrieval(cases, fullRun);
+  }
 }
 
 main().catch((e) => {

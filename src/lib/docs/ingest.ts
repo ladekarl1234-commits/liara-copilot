@@ -212,12 +212,13 @@ export function splitLong(text: string): string[] {
     }
   }
   if (acc.trim()) out.push(acc.trim());
-  // absolute enforcement: a single blank-line-free block (huge table, minified
-  // content) must still respect the cap — slice as a last resort
+  // absolute enforcement: every returned piece is <= MAX_CHUNK_CHARS. A single
+  // blank-line-free block (huge table, minified content) is hard-sliced as a
+  // last resort. No 1.5x slack — the cap is the cap.
   return out
     .filter(Boolean)
     .flatMap((piece) =>
-      piece.length <= MAX_CHUNK_CHARS * 1.5
+      piece.length <= MAX_CHUNK_CHARS
         ? [piece]
         : Array.from({ length: Math.ceil(piece.length / MAX_CHUNK_CHARS) }, (_, i) =>
             piece.slice(i * MAX_CHUNK_CHARS, (i + 1) * MAX_CHUNK_CHARS),

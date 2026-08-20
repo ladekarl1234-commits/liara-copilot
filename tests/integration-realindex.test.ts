@@ -15,6 +15,18 @@ import type { ChatEvent, ModelProvider } from '@/types';
 
 const INDEX_DIR = process.env.INDEX_DIR || path.join('data', 'index');
 const HAS_INDEX = fs.existsSync(path.join(INDEX_DIR, 'lexical.json'));
+
+// Skipping is a convenience for a fresh local clone that hasn't run
+// `npm run index` yet. In CI it is a lie: the gate certification would vanish
+// silently. So under CI the missing index is a hard failure — the pipeline
+// must build the index before `npm test` (documented in docs/DEPLOYMENT.md).
+if (!HAS_INDEX && process.env.CI) {
+  describe('real index certification', () => {
+    it('requires a built index in CI (run `npm run index` before `npm test`)', () => {
+      throw new Error(`data/index not found at ${INDEX_DIR}; CI must build it before tests`);
+    });
+  });
+}
 const d = HAS_INDEX ? describe : describe.skip;
 
 d('real index: evidence gate', () => {
@@ -24,20 +36,39 @@ d('real index: evidence gate', () => {
   });
   afterEach(() => resetIndexForTests());
 
-  it('gates a cake recipe LOW even though lexical returns hits', async () => {
-    const r = await search(['دستور پخت کیک شکلاتی خامه‌ای مرحله به مرحله'], {}, {}, loadIndex(INDEX_DIR));
-    expect(r.confidence).toBe('low');
+  // These are the queries with NO real Liara vocabulary overlap — gibberish
+  // and all-stopword input. They must gate 'low' on a fresh turn. (Off-topic
+  // queries that DO share a real word, like a cake "دستور", are deliberately
+  // 'medium' — defended by the grounded answer model, see docs/EVALUATION.md.)
+  const OFF_TOPIC_LOW = [
+    'asdkjhasd qwe zzz',
+    'a',
+    'چطور؟',
+    'about the',
+    'zzz qqq www',
+    'سلام خوبی؟',
+  ];
+  for (const q of OFF_TOPIC_LOW) {
+    it(`gates off-topic/empty query LOW: ${JSON.stringify(q)}`, async () => {
+      const r = await search([q], {}, {}, loadIndex(INDEX_DIR));
+      expect(r.confidence).toBe('low');
+    });
+  }
+
+  it('does NOT gate legit one-concept or full questions low', async () => {
+    const idx = loadIndex(INDEX_DIR);
+    for (const q of ['چطور دامنه وصل کنم', 'دامنه', 'تنظیم متغیرهای محیطی', 'استقرار برنامه Next.js']) {
+      const r = await search([q], {}, {}, idx);
+      expect(r.confidence, `"${q}" should not be low`).not.toBe('low');
+    }
   });
 
-  it('gates gibberish LOW', async () => {
-    const r = await search(['asdkjhasd qwe zzz'], {}, {}, loadIndex(INDEX_DIR));
-    expect(r.confidence).toBe('low');
-  });
-
-  it('does NOT gate a real deployment question low', async () => {
-    const r = await search(['استقرار برنامه Next.js در لیارا'], { platform: 'nextjs' }, {}, loadIndex(INDEX_DIR));
-    expect(r.confidence).not.toBe('low');
+  it('applies the product filter independently of platform (no cross-product leak at real scale)', async () => {
+    // enough dbaas/postgresql chunks exist that the <5 fallback never fires,
+    // so the product filter is the only thing selecting results
+    const r = await search(['اتصال به دیتابیس'], { product: 'dbaas', platform: 'postgresql' }, {}, loadIndex(INDEX_DIR));
     expect(r.chunks.length).toBeGreaterThan(0);
+    expect(r.chunks.every((s) => s.chunk.product === 'dbaas')).toBe(true);
   });
 });
 

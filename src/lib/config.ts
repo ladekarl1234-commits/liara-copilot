@@ -19,9 +19,11 @@ const Env = z.object({
 
   // Security
   RATE_LIMIT_RPM: z.coerce.number().int().positive().default(20),
-  // 'on' when a trusted proxy (Liara LB) sets x-forwarded-for; 'off' for
-  // direct exposure, where the header is client-spoofable
-  TRUST_PROXY: z.enum(['on', 'off']).default('on'),
+  // 'on' ONLY when a trusted proxy (Liara LB) sets x-forwarded-for. Default
+  // 'off' is fail-closed: a directly-exposed server must not trust a
+  // client-spoofable header (which would mint a fresh rate bucket per request).
+  // The Liara deployment sets TRUST_PROXY=on — see docs/DEPLOYMENT.md.
+  TRUST_PROXY: z.enum(['on', 'off']).default('off'),
   MAX_INPUT_CHARS: z.coerce.number().int().positive().default(8_000),
   MAX_BODY_BYTES: z.coerce.number().int().positive().default(64_000),
 

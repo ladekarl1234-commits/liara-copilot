@@ -56,18 +56,25 @@ describe('exactCoverage', () => {
 
 describe('gateConfidence', () => {
   it('is low with no results', () => {
-    expect(gateConfidence(0, { ratio: 1, informative: 3 }, 100, 2)).toBe('low');
+    expect(gateConfidence(0, { ratio: 1, informative: 3, matched: 3 }, 100, 2)).toBe('low');
   });
-  it('is low when informative coverage is below the floor', () => {
-    expect(gateConfidence(8, { ratio: 0.2, informative: 4 }, 100, 1.2)).toBe('low');
+  it('is low when no informative token matched (fresh turn)', () => {
+    expect(gateConfidence(8, { ratio: 0, informative: 4, matched: 0 }, 100, 1.2)).toBe('low');
+  });
+  it('is low when coverage is below the ratio floor', () => {
+    expect(gateConfidence(8, { ratio: 0.2, informative: 4, matched: 1 }, 100, 1.2)).toBe('low');
   });
   it('is high only with strong coverage, score and margin', () => {
-    expect(gateConfidence(8, { ratio: 0.8, informative: 3 }, 40, 1.1)).toBe('high');
-    expect(gateConfidence(8, { ratio: 0.8, informative: 3 }, 40, 1.0)).toBe('medium'); // weak margin
-    expect(gateConfidence(8, { ratio: 0.8, informative: 1 }, 40, 1.1)).toBe('medium'); // single token
+    expect(gateConfidence(8, { ratio: 0.8, informative: 3, matched: 3 }, 40, 1.1)).toBe('high');
+    expect(gateConfidence(8, { ratio: 0.8, informative: 3, matched: 3 }, 40, 1.0)).toBe('medium'); // weak margin
+    expect(gateConfidence(8, { ratio: 1, informative: 1, matched: 1 }, 40, 1.1)).toBe('medium'); // single token
   });
-  it('leaves a pure-stopword follow-up to the planner (medium, not low)', () => {
-    expect(gateConfidence(8, { ratio: 0, informative: 0 }, 30, 1.02)).toBe('medium');
+  it('a matched vocabulary token lands in medium (grounded model is the defense)', () => {
+    expect(gateConfidence(8, { ratio: 0.5, informative: 2, matched: 1 }, 30, 1.02)).toBe('medium');
+  });
+  it('an all-stopword query is low on a fresh turn but medium as a follow-up', () => {
+    expect(gateConfidence(8, { ratio: 0, informative: 0, matched: 0 }, 30, 1.02, 0)).toBe('low');
+    expect(gateConfidence(8, { ratio: 0, informative: 0, matched: 0 }, 30, 1.02, 2)).toBe('medium');
   });
 });
 
@@ -106,11 +113,10 @@ describe('search gate (fixture)', () => {
     expect(r.confidence).not.toBe('low');
     expect(r.chunks[0].chunk.id).toBe('env');
   });
-  it('applies product and platform filters independently', async () => {
-    // product=dbaas must not be dropped just because a platform is also set
-    const r = await search(['دیتابیس PostgreSQL'], { product: 'dbaas', platform: 'postgresql' }, {}, fixture());
-    expect(r.chunks.every((s) => s.chunk.product === 'dbaas')).toBe(true);
-  });
+  // NOTE: the "product filter applied independently of platform" behavior is
+  // certified against the REAL index in tests/integration-realindex.test.ts —
+  // on a tiny fixture the `< 5 results` cross-product fallback (by design)
+  // re-admits filtered-out chunks, which would mask the assertion.
   it('empty-string filters do not build an always-true predicate', async () => {
     const r = await search(['استقرار NextJS'], { product: '', platform: '  ' } as never, {}, fixture());
     expect(r.chunks.length).toBeGreaterThan(0);
