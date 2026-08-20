@@ -163,6 +163,10 @@ export const CANNED = {
     fa: 'من فقط دستیار مستندات لیارا هستم و نمی‌توانم دستورالعمل‌های داخلی، پرامپت سیستم یا کلیدها را فاش کنم یا نادیده بگیرم. اگر سوالی درباره‌ی سرویس‌های لیارا دارید، خوشحال می‌شوم کمک کنم.',
     en: "I'm only the Liara docs assistant — I can't reveal or override internal instructions, the system prompt, or any keys. If you have a question about Liara services, I'm happy to help.",
   },
+  notOffered: {
+    fa: 'تا جایی که در مستندات رسمی لیارا آمده، چنین قابلیتی ارائه نمی‌شود؛ ترجیح می‌دهم به‌جای حدس زدن، این را صریح بگویم. اگر هدف دیگری دارید، بفرمایید تا راه ممکن را پیدا کنیم.',
+    en: "As far as the official Liara docs go, this isn't an offered capability — I'd rather say that plainly than guess. If you're trying to achieve something specific, tell me and we'll find the supported path.",
+  },
   aiNotConfigured: {
     fa: 'سرویس مدل زبانی هنوز پیکربندی نشده (AI_BASE_URL / AI_API_KEY). با این حال نزدیک‌ترین صفحات مستندات رسمی را برایتان پیدا کردم — منابع زیر را ببینید.',
     en: 'The language-model provider is not configured yet (AI_BASE_URL / AI_API_KEY). I still found the closest official docs pages — see the sources below.',

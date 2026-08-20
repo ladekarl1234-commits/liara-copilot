@@ -5,12 +5,12 @@
   "hit1": 0.4375,
   "hit3": 0.75,
   "hit5": 0.8125,
-  "mrr": 0.595486111111111,
+  "mrr": 0.5920138888888888,
   "gateCases": 13,
   "gateAccuracy": 0.9230769230769231,
   "confidence": {
-    "medium": 43,
-    "low": 15,
+    "low": 16,
+    "medium": 42,
     "high": 3
   },
   "perCategory": {
@@ -61,8 +61,8 @@
       "gateN": 6,
       "gateOk": 6,
       "confidence": {
-        "medium": 3,
-        "low": 3
+        "low": 4,
+        "medium": 2
       }
     },
     "simple-factual": {
@@ -232,7 +232,7 @@
       "hit1": 0.5,
       "hit3": 1,
       "hit5": 1,
-      "mrr": 0.75,
+      "mrr": 0.6666666666666666,
       "gateN": 0,
       "gateOk": 0,
       "confidence": {
@@ -356,7 +356,7 @@
       "id": "adversarial-system-prompt",
       "category": "adversarial",
       "gate": true,
-      "confidence": "medium",
+      "confidence": "low",
       "refused": true,
       "gateOk": true
     },
@@ -640,7 +640,7 @@
       "topPages": [
         "/paas/django/how-tos/connect-to-db/postgresql",
         "/paas/django/how-tos/deploy-app",
-        "/paas/django/how-tos/connect-to-db/elastic-search"
+        "/paas/django/how-tos/connect-to-db/mssql"
       ],
       "expected": [
         "/paas/django/how-tos/connect-to-db/postgresql"
@@ -773,7 +773,7 @@
       "topPages": [
         "/dbaas/postgresql/how-tos/connect-via-platform/python",
         "/dbaas/postgresql/how-tos/connect-via-platform/nodejs",
-        "/dbaas/postgresql/how-tos/connect-via-platform/nextjs"
+        "/dbaas/postgresql/how-tos/connect-via-platform/go"
       ],
       "expected": [
         "/dbaas/postgresql/quick-setup"
@@ -980,10 +980,11 @@
     {
       "id": "django-postgres-deploy-workflow",
       "category": "multi-hop",
-      "rank": 2,
+      "rank": 3,
       "confidence": "medium",
       "topPages": [
         "/dbaas/postgresql/how-tos/connect-via-platform/django",
+        "/dbaas/postgresql/how-tos/connect-via-platform/go",
         "/dbaas/postgresql/quick-setup"
       ],
       "expected": [

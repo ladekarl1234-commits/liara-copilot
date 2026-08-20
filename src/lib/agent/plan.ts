@@ -122,9 +122,12 @@ const ERROR_RE =
 
 const GREETING_RE = /^(سلام|درود|hi|hello|hey|صبح بخیر|وقت بخیر|خسته نباشید)[!.\s؟?]*$/i;
 
-// "it is NOT nextjs" / "دیگه nextjs نیست" / "از nextjs استفاده نمی‌کنم" — a
-// negated stack term must clear, not set, that context.
-const NEGATION_RE = /\b(not|isn'?t|no longer|instead of)\b|نیست|نه\b|دیگه\s*نیست|استفاده\s*نمی|عوض\s*کرد|به\s*جای/i;
+// A stack term is NEGATED only when a negation cue sits DIRECTLY on it —
+// "not nextjs" / "instead of nextjs" (before) or "nextjs نیست" (after). This
+// must NOT fire for "my nextjs app is not working" (the "not" modifies
+// "working", not the platform) (AG3-002).
+const NEG_BEFORE_RE = /\b(not|isn'?t|no longer|instead of)\s*$|(به\s*جای|عوض\s*کرد(م|ی|)?\s*(به)?)\s*$/i;
+const NEG_AFTER_RE = /^\s*(نیست|نبود|نمیخوام|رو عوض)/i;
 
 export interface DeterministicSignals {
   language: 'fa' | 'en';
@@ -137,13 +140,13 @@ export interface DeterministicSignals {
   negatedDatabase?: boolean;
 }
 
-/** True when `term` appears within a short window of a negation cue. */
+/** True when a negation cue sits directly before or after the matched term. */
 function isNegated(message: string, termRe: RegExp): boolean {
-  if (!NEGATION_RE.test(message)) return false;
-  const m = termRe.exec(message);
+  const m = new RegExp(termRe.source, termRe.flags).exec(message);
   if (!m) return false;
-  const around = message.slice(Math.max(0, m.index - 25), m.index + m[0].length + 25);
-  return NEGATION_RE.test(around);
+  const before = message.slice(Math.max(0, m.index - 15), m.index);
+  const after = message.slice(m.index + m[0].length, m.index + m[0].length + 10);
+  return NEG_BEFORE_RE.test(before) || NEG_AFTER_RE.test(after);
 }
 
 export function preClassify(message: string): DeterministicSignals {
@@ -183,21 +186,32 @@ export function fallbackPlan(message: string, s: DeterministicSignals, state: Se
   const ownTopic = s.database ?? (s.product && s.product !== 'paas' ? s.product : undefined);
   const negated = s.negatedPlatform || s.negatedDatabase;
   const platform = s.platform ?? (ownTopic || negated ? undefined : state.context.platform);
-  const intent: AgentPlan['intent'] = s.isGreeting ? 'chitchat' : s.hasError ? 'troubleshooting' : 'question';
+  const isDeploy = !s.hasError && DEPLOY_INTENT_RE.test(message);
+  const intent: AgentPlan['intent'] = s.isGreeting
+    ? 'chitchat'
+    : s.hasError
+      ? 'troubleshooting'
+      : isDeploy
+        ? 'workflow'
+        : 'question';
 
   const clearContext: NonNullable<AgentPlan['statePatch']['clearContext']> = [];
-  if (s.negatedPlatform) clearContext.push('platform');
-  if (s.negatedDatabase) clearContext.push('database');
+  // clear the old value ONLY when the negation named no replacement — if the
+  // user switched TO a new stack ("django instead of nextjs"), s.platform is
+  // already the new one and must not be cleared after the merge
+  if (s.negatedPlatform && !s.platform) clearContext.push('platform');
+  if (s.negatedDatabase && !s.database) clearContext.push('database');
 
-  // Deterministically seed the agentic state so Fix/Guide are visible even in
-  // keyless mode (no model to author it). Ranked hypotheses come from the
+  // Deterministically seed the agentic state so Fix AND Guide are visible even
+  // in keyless mode (no model to author it). Ranked hypotheses come from the
   // error signature; workflow steps from a detected deploy intent.
   const troubleshooting = s.hasError ? seedTroubleshooting(message, s) : undefined;
+  const workflow = isDeploy ? seedWorkflow(s, platform, state) : undefined;
 
   return {
     intent,
     language: s.language,
-    action: 'answer',
+    action: isDeploy ? 'next_step' : 'answer',
     statePatch: {
       context: {
         ...(s.platform ? { platform: s.platform } : {}),
@@ -207,6 +221,7 @@ export function fallbackPlan(message: string, s: DeterministicSignals, state: Se
       } as SessionState['context'],
       ...(clearContext.length ? { clearContext } : {}),
       ...(troubleshooting ? { troubleshooting } : {}),
+      ...(workflow ? { workflow } : {}),
     },
     retrievalQueries: s.isGreeting ? [] : [message.slice(0, 200)],
     filters: {
@@ -255,6 +270,28 @@ const ERROR_HYPOTHESES: { re: RegExp; specific: boolean; hyps: string[] }[] = [
     ],
   },
 ];
+
+// A deploy / "how do I get my project onto Liara" intent → seed a Guide.
+const DEPLOY_INTENT_RE =
+  /استقرار|مستقر|دیپلوی|deploy|راه[\s‌]?اندازی|بالا بیار|منتشر کن|publish|از کجا شروع|چطور.*(اجرا|بالا)|get.*(started|running|deployed|onto)/i;
+
+/** Deterministic deployment workflow checklist so Guide is visible keyless. */
+function seedWorkflow(s: DeterministicSignals, platform: string | undefined, state: SessionState): SessionState['workflow'] {
+  const detected: string[] = [];
+  if (platform ?? state.context.platform) detected.push(platform ?? state.context.platform!);
+  if (s.database ?? state.context.database) detected.push(s.database ?? state.context.database!);
+  const hasDb = Boolean(s.database ?? state.context.database);
+  const steps = [
+    { id: 'w1', label: 'ساخت برنامه (انتخاب پلتفرم و پلن)', status: 'current' as const },
+    ...(hasDb ? [{ id: 'w2', label: 'ساخت سرویس دیتابیس', status: 'pending' as const }] : []),
+    { id: 'w3', label: 'تنظیم متغیرهای محیطی', status: 'pending' as const },
+    { id: 'w4', label: 'اجرای استقرار (liara deploy یا Git)', status: 'pending' as const },
+    ...(hasDb ? [{ id: 'w5', label: 'اجرای migration دیتابیس', status: 'pending' as const }] : []),
+    { id: 'w6', label: 'اتصال دامنه (اختیاری)', status: 'pending' as const },
+    { id: 'w7', label: 'بررسی سلامت و لاگ‌ها', status: 'pending' as const },
+  ];
+  return { goal: 'استقرار پروژه روی لیارا', detected, steps };
+}
 
 function seedTroubleshooting(message: string, s: DeterministicSignals): SessionState['troubleshooting'] {
   // prefer a specific bucket over a generic one even if the generic matches too

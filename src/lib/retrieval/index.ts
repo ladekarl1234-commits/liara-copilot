@@ -231,7 +231,10 @@ export async function search(
   for (const s of fused) {
     if (selected.length >= MAX_EVIDENCE_CHUNKS) break;
     if (s.score < top * 0.35) break;
-    const bodyKey = normalizeFa(s.chunk.text).replace(/\s+/g, ' ').trim().slice(0, 400);
+    // dedup on the FULL normalized body (not a 400-char prefix, which would
+    // collide two distinct chunks that merely share a templated header and drop
+    // the one that actually answers the query) — CORR-R3-04
+    const bodyKey = normalizeFa(s.chunk.text).replace(/\s+/g, ' ').trim();
     if (seenBodies.has(bodyKey)) continue; // duplicate/near-identical body
     if (chars + s.chunk.text.length > MAX_EVIDENCE_CHARS && selected.length >= 1) break;
     seenBodies.add(bodyKey);
@@ -330,6 +333,10 @@ export function gateConfidence(
   // otherwise turn 1 onward would answer it.
   if (coverage.matched === 0) return coverage.informative === 0 && priorTurns > 0 ? 'medium' : 'low';
   if (coverage.ratio < 0.34) return 'low';
+  // Weak-and-off-target: the top page's TITLE shares no query token and coverage
+  // is thin → retrieval likely missed the answering page, so an answer would be
+  // grounded-but-off-target. Refuse instead (CORR-R3-01).
+  if (!topTitleMatch && coverage.ratio < 0.5) return 'low';
   if (
     topTitleMatch &&
     coverage.ratio >= 0.7 &&

@@ -122,6 +122,9 @@ export function useChat() {
     if (streamingRef.current) return;
     streamingRef.current = true;
     lastUserRef.current = text;
+    // clear stale context chips: the server re-emits a `context` event only when
+    // the new turn has context, so without a reset old chips would persist (UX-301)
+    setContextChips([]);
 
     const asstId = nextId('a');
     setMessages((ms) => [

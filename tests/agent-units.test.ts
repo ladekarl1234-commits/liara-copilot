@@ -62,12 +62,34 @@ describe('preClassify + fallbackPlan', () => {
     expect(p.retrievalQueries).toEqual([]);
   });
 
-  it('detects a NEGATED platform and emits clearContext instead of setting it', () => {
-    const s = preClassify('نه، nextjs نیست؛ پروژه داکرایز شده');
+  it('clears a negated platform when no replacement is named', () => {
+    const s = preClassify('نه، nextjs نیست');
     expect(s.negatedPlatform).toBe(true);
     expect(s.platform).toBeUndefined();
-    const p = fallbackPlan('نه، nextjs نیست؛ پروژه داکرایز شده', s, base());
+    const p = fallbackPlan('نه، nextjs نیست', s, base());
     expect(p.statePatch.clearContext).toContain('platform');
+  });
+
+  it('captures the NEW platform on a switch ("django instead of nextjs")', () => {
+    const s = preClassify('use django instead of nextjs');
+    expect(s.negatedPlatform).toBe(true);
+    expect(s.platform).toBe('django'); // switch target captured (AG2-001/AG3-006)
+    const p = fallbackPlan('use django instead of nextjs', s, base());
+    expect(p.statePatch.context?.platform).toBe('django');
+    expect(p.statePatch.clearContext ?? []).not.toContain('platform'); // not cleared after set
+  });
+
+  it('does NOT negate a platform when "not" modifies a different word (AG3-002)', () => {
+    expect(preClassify('my nextjs app is not working').platform).toBe('nextjs');
+    expect(preClassify('nextjs is not deploying, error 502').platform).toBe('nextjs');
+  });
+
+  it('seeds a deployment workflow (Guide) for a deploy intent', () => {
+    const q = 'من Django + PostgreSQL دارم و می‌خواهم روی لیارا مستقر کنم';
+    const p = fallbackPlan(q, preClassify(q), base());
+    expect(p.intent).toBe('workflow');
+    expect(p.statePatch.workflow?.steps.length).toBeGreaterThanOrEqual(5);
+    expect(p.statePatch.workflow?.detected).toContain('django');
   });
 
   it('broadened error detection covers Persian error phrasings', () => {

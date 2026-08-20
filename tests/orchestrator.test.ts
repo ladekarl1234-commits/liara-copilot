@@ -195,6 +195,30 @@ describe('orchestrator', () => {
     expect(text).toMatch(/check|بررسی/); // a diagnostic step is offered
   });
 
+  it('runs the Guide flow (workflow checklist) for a deploy intent even keyless', async () => {
+    delete process.env.AI_BASE_URL;
+    delete process.env.AI_API_KEY;
+    resetConfigForTests();
+    const events = await run('من Django + PostgreSQL دارم و می‌خواهم روی لیارا مستقر کنم');
+    const wf = events.find((e) => e.type === 'workflow') as Extract<ChatEvent, { type: 'workflow' }>;
+    expect(wf, 'a workflow event must be emitted').toBeTruthy();
+    expect(wf.workflow.steps.length).toBeGreaterThanOrEqual(5);
+    expect(wf.workflow.steps.some((s) => s.status === 'current')).toBe(true);
+  });
+
+  it('refuses a not-offered feature honestly (GPU) before answering from unrelated pages', async () => {
+    delete process.env.AI_BASE_URL;
+    delete process.env.AI_API_KEY;
+    resetConfigForTests();
+    const events = await run('قیمت پلن GPU برای دیتابیس چنده؟');
+    const text = events
+      .filter((e): e is Extract<ChatEvent, { type: 'delta' }> => e.type === 'delta')
+      .map((e) => e.text)
+      .join('');
+    expect(text).toMatch(/ارائه نمی‌شود|isn't an offered/);
+    expect(events.some((e) => e.type === 'citations')).toBe(false); // no misleading sources
+  });
+
   it('degrades gracefully without a configured provider (sources only)', async () => {
     delete process.env.AI_BASE_URL;
     delete process.env.AI_API_KEY;

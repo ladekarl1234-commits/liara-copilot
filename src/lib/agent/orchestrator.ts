@@ -16,7 +16,7 @@ import { getOrCreateSession, applyPatch, pushTurn, contextChips, save } from '@/
 import { log, logMetrics } from '@/lib/obs/log';
 import { recordTrace } from '@/lib/obs/trace';
 import { recordGap } from '@/lib/obs/gaps';
-import { detectInjection } from '@/lib/security/injection';
+import { detectInjection, detectAbsentFeature } from '@/lib/security/injection';
 
 // ponytail: in-memory FAQ answer cache (stateless first-turn Q&A only);
 // single-instance ceiling, same upgrade path as the session store.
@@ -71,6 +71,18 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
       finish(emit, session.id, message, CANNED.injection[lang]);
       intent = 'unsupported';
       record('injection_blocked');
+      return;
+    }
+
+    // Feature Liara doesn't offer (GPU, k8s, SMS, refunds) → say so honestly,
+    // regardless of phrasing, before retrieval can answer from unrelated pages.
+    if (detectAbsentFeature(message)) {
+      const lang = detectLanguage(message);
+      emit({ type: 'delta', text: CANNED.notOffered[lang] });
+      recordGap({ normalizedQuestion: normalizedKey(message), reason: 'insufficient_evidence', language: lang });
+      finish(emit, session.id, message, CANNED.notOffered[lang]);
+      intent = 'unsupported';
+      record('not_offered');
       return;
     }
 
@@ -134,10 +146,10 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     // --- evidence gate ---
     const gateFailed = retrieval.confidence === 'low' || !retrieval.chunks.length;
     if (plan.action === 'insufficient' || plan.intent === 'unsupported' || gateFailed) {
-      // Troubleshooting REASONS from the symptom — it must not collapse into a
-      // flat "couldn't find it" just because retrieval was weak. If the plan
-      // seeded a hypothesis ledger, run the Fix flow: show the ranked causes and
-      // the first diagnostic step, and surface the troubleshooting state.
+      // Fix and Guide REASON from intent — they must not collapse into a flat
+      // "couldn't find it" just because retrieval was weak. If the plan seeded a
+      // hypothesis ledger or a workflow checklist, run it: show the ranked
+      // causes / the next step, and surface the agentic state.
       const t = session.troubleshooting;
       if (plan.intent === 'troubleshooting' && t && t.hypotheses.length) {
         const msg = fixFramedMessage(t, plan.language);
@@ -146,6 +158,16 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
         finish(emit, session.id, message, msg);
         setLastAction(session.id, 'next_step');
         record('troubleshoot_low_evidence');
+        return;
+      }
+      const w = session.workflow;
+      if (plan.intent === 'workflow' && w && w.steps.length) {
+        const msg = guideFramedMessage(w, plan.language);
+        emit({ type: 'delta', text: msg });
+        emitState(emit, session);
+        finish(emit, session.id, message, msg);
+        setLastAction(session.id, 'next_step');
+        record('workflow_low_evidence');
         return;
       }
       const msg = CANNED.insufficient[plan.language];
@@ -302,6 +324,16 @@ function fixFramedMessage(t: NonNullable<SessionState['troubleshooting']>, lang:
     return `برای این خطا محتمل‌ترین علت‌ها این‌ها هستند. بیایید از محتمل‌ترین شروع کنیم:\n\n**اولین چیزی که بررسی کنیم:** ${top}\n\n${others ? `سایر احتمال‌ها:\n${others}\n\n` : ''}نتیجه‌ی بررسی بالا را بگویید تا قدم بعدی را مشخص کنم.`;
   }
   return `Here are the most likely causes for this error. Let's start with the most likely:\n\n**First thing to check:** ${top}\n\n${others ? `Other possibilities:\n${others}\n\n` : ''}Tell me what you find and I'll narrow down the next step.`;
+}
+
+/** A step-framed Guide message for a detected multi-step workflow. */
+function guideFramedMessage(w: NonNullable<SessionState['workflow']>, lang: 'fa' | 'en'): string {
+  const current = w.steps.find((s: { status: string }) => s.status === 'current') ?? w.steps[0];
+  const detected = w.detected.length ? w.detected.join('، ') : '';
+  if (lang === 'fa') {
+    return `${detected ? `استک شناسایی‌شده: ${detected}.\n\n` : ''}این کار را قدم‌به‌قدم پیش می‌بریم.\n\n**قدم فعلی:** ${current?.label ?? ''}\n\nوقتی این قدم را انجام دادید بگویید تا برویم سراغ قدم بعدی. فهرست کامل مراحل کنار همین پیام آمده است.`;
+  }
+  return `${detected ? `Detected stack: ${detected}.\n\n` : ''}Let's do this step by step.\n\n**Current step:** ${current?.label ?? ''}\n\nTell me when it's done and we'll move to the next. The full checklist is shown alongside this message.`;
 }
 
 function emitState(emit: (e: ChatEvent) => void, session: ReturnType<typeof getOrCreateSession>) {
