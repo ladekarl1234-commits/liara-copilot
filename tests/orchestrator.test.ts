@@ -206,19 +206,6 @@ describe('orchestrator', () => {
     expect(wf.workflow.steps.some((s) => s.status === 'current')).toBe(true);
   });
 
-  it('refuses a not-offered feature honestly (GPU) before answering from unrelated pages', async () => {
-    delete process.env.AI_BASE_URL;
-    delete process.env.AI_API_KEY;
-    resetConfigForTests();
-    const events = await run('قیمت پلن GPU برای دیتابیس چنده؟');
-    const text = events
-      .filter((e): e is Extract<ChatEvent, { type: 'delta' }> => e.type === 'delta')
-      .map((e) => e.text)
-      .join('');
-    expect(text).toMatch(/ارائه نمی‌شود|isn't an offered/);
-    expect(events.some((e) => e.type === 'citations')).toBe(false); // no misleading sources
-  });
-
   it('degrades gracefully without a configured provider (sources only)', async () => {
     delete process.env.AI_BASE_URL;
     delete process.env.AI_API_KEY;

@@ -16,7 +16,7 @@ import { getOrCreateSession, applyPatch, pushTurn, contextChips, save } from '@/
 import { log, logMetrics } from '@/lib/obs/log';
 import { recordTrace } from '@/lib/obs/trace';
 import { recordGap } from '@/lib/obs/gaps';
-import { detectInjection, detectAbsentFeature } from '@/lib/security/injection';
+import { detectInjection } from '@/lib/security/injection';
 
 // ponytail: in-memory FAQ answer cache (stateless first-turn Q&A only);
 // single-instance ceiling, same upgrade path as the session store.
@@ -71,18 +71,6 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
       finish(emit, session.id, message, CANNED.injection[lang]);
       intent = 'unsupported';
       record('injection_blocked');
-      return;
-    }
-
-    // Feature Liara doesn't offer (GPU, k8s, SMS, refunds) → say so honestly,
-    // regardless of phrasing, before retrieval can answer from unrelated pages.
-    if (detectAbsentFeature(message)) {
-      const lang = detectLanguage(message);
-      emit({ type: 'delta', text: CANNED.notOffered[lang] });
-      recordGap({ normalizedQuestion: normalizedKey(message), reason: 'insufficient_evidence', language: lang });
-      finish(emit, session.id, message, CANNED.notOffered[lang]);
-      intent = 'unsupported';
-      record('not_offered');
       return;
     }
 

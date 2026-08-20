@@ -84,6 +84,11 @@ describe('preClassify + fallbackPlan', () => {
     expect(preClassify('nextjs is not deploying, error 502').platform).toBe('nextjs');
   });
 
+  it('detects an abandonment negation ("no longer use X") (CORR-R4-02)', () => {
+    expect(preClassify('دیگه nextjs استفاده نمی‌کنم').negatedPlatform).toBe(true);
+    expect(preClassify('I no longer use nextjs').negatedPlatform).toBe(true);
+  });
+
   it('seeds a deployment workflow (Guide) for a deploy intent', () => {
     const q = 'من Django + PostgreSQL دارم و می‌خواهم روی لیارا مستقر کنم';
     const p = fallbackPlan(q, preClassify(q), base());

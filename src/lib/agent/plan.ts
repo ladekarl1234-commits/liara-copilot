@@ -126,7 +126,7 @@ const GREETING_RE = /^(سلام|درود|hi|hello|hey|صبح بخیر|وقت ب�
 // "not nextjs" / "instead of nextjs" (before) or "nextjs نیست" (after). This
 // must NOT fire for "my nextjs app is not working" (the "not" modifies
 // "working", not the platform) (AG3-002).
-const NEG_BEFORE_RE = /\b(not|isn'?t|no longer|instead of)\s*$|(به\s*جای|عوض\s*کرد(م|ی|)?\s*(به)?)\s*$/i;
+const NEG_BEFORE_RE = /\b(not|isn'?t|no longer( use| using| need)?|instead of|stopped using|dropped|migrated from|moved (away )?from)\s*$|(به\s*جای|عوض\s*کرد(م|ی|)?\s*(به)?)\s*$/i;
 const NEG_AFTER_RE = /^\s*(نیست|نبود|نمیخوام|رو عوض)/i;
 
 export interface DeterministicSignals {
@@ -140,13 +140,18 @@ export interface DeterministicSignals {
   negatedDatabase?: boolean;
 }
 
-/** True when a negation cue sits directly before or after the matched term. */
+// "nextjs رو دیگه استفاده نمی‌کنم" — abandonment cue after the platform.
+const NEG_ABANDON_RE = /(استفاده\s*نمی|دیگه\s*(ازش|از این)?\s*استفاده|رهاش? کرد|کنار گذاشت|no longer (use|using)|stopped using|dropped)/i;
+
+/** True when a negation cue sits directly before or (near-)after the matched term. */
 function isNegated(message: string, termRe: RegExp): boolean {
   const m = new RegExp(termRe.source, termRe.flags).exec(message);
   if (!m) return false;
   const before = message.slice(Math.max(0, m.index - 15), m.index);
   const after = message.slice(m.index + m[0].length, m.index + m[0].length + 10);
-  return NEG_BEFORE_RE.test(before) || NEG_AFTER_RE.test(after);
+  // abandonment ("no longer use X") can trail the platform by a few words
+  const afterWide = message.slice(m.index + m[0].length, m.index + m[0].length + 30);
+  return NEG_BEFORE_RE.test(before) || NEG_AFTER_RE.test(after) || NEG_ABANDON_RE.test(afterWide);
 }
 
 export function preClassify(message: string): DeterministicSignals {
