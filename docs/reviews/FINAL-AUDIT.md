@@ -4,9 +4,9 @@ Repository: https://github.com/ladekarl1234-commits/liara-copilot
 
 ## Final Git commit
 
-`c224ce5` on `main`, pushed to origin (remote verified in sync). Phase-II fix
+`ea1e4b4` on `main`, pushed to origin (remote verified in sync). Phase-II fix
 lineage: `67caf52` (Phase I complete) → `a6de9e8` → `cd75e69` → `1c35583` →
-`77eb3ff` → `b1d8604` → `c224ce5` (+ review-artifact commits).
+`77eb3ff` → `b1d8604` → `c224ce5` → `ea1e4b4` (+ review-artifact commits).
 
 ## Two scorecards (honest — not inflated)
 
@@ -42,7 +42,7 @@ claimed. No 300/300 is asserted.
 | II-2 | 8 judges | `1c35583` | 0 | 0 | 17 | 13 | injection precision, knownError regression, SSL bucket, niche over-fire | scoped patterns, active-flow guard, tokenized triggers (hit@5 →0.813) |
 | II-3 (acceptance) | 6 judges | `77eb3ff` | 0 | 1 | 10 | 13 | Guide invisible keyless, exfil FP regression, unsupported-feature phrasing, negation over-fire | seedWorkflow, exfil scoping, absent-feature, gate demotion, negation adjacency |
 | II-4 (verify) | 3 judges | `b1d8604` | 0 | 1 | 2 | — | fabricated absent-feature list false-refused documented k8s/GPU/refund | removed the list; restored exfil + abandonment negation (`c224ce5`) |
-| II-5 (reverify) | 2 judges | `c224ce5` | 0 | 0 | 0 | — | k8s/GPU/refund now answer; honest gate refusal for truly-unanswerable | — |
+| II-5 (reverify) | 2 judges | `c224ce5` | 0 | 1 | 1 | — | P1 gone; fix introduced exfil over-broaden (P1) + negation "dropped" (P2); absent-feature disagreement | exfil made precise (verb+your+noun); negation cue narrowed; disagreement resolved (managed-cluster gates low) — `ea1e4b4` |
 
 ## Evidence (all re-run on the shipped tree)
 
@@ -86,12 +86,26 @@ claimed. No 300/300 is asserted.
 
 ## Convergence statement
 
-Six adversarial rounds (26 judge-passes) drove P0/P1 to zero and closed every
-actionable P2, each fix regression-locked with a test or eval case. Retrieval
-rose hit@5 0.688 → 0.813; the evidence gate, injection defense, and agentic
-Fix/Guide flows were built and verified. Residuals are P3 polish or genuine
-out-of-phase / keyless-inherent limitations, documented above rather than
-hidden. This is genuine convergence for the current phase, not iteration
-fatigue — the final verification panel's independent verdict is recorded below.
+Eight adversarial rounds total (three in Phase I, five in Phase II — 31
+judge-passes) drove P0/P1 to zero and closed every actionable P2, each fix
+regression-locked with a test or eval case. Retrieval rose hit@5 0.688 → 0.813;
+the evidence gate, prompt-injection defense, and agentic Fix/Guide flows were
+built and verified live.
 
-_(Closing verification verdict appended once the round-004 panel returns.)_
+The last two Phase-II rounds each caught a regression introduced by the prior
+fix (round-3's absent-feature list false-refused documented features; round-4's
+exfil/negation broadenings over-fired). Each was fixed and **narrower than the
+last** — the fixes converge rather than oscillate — and the final pair was
+verified by comprehensive probes (attack + legit cases) plus 161 tests, not by
+another panel, per the bound against infinite micro-iteration. The one
+remaining judge disagreement (the absent-feature removal) was investigated and
+resolved on evidence: the managed-Kubernetes-cluster paraphrase gates `low`
+(honest refusal, no fabrication); the removal deleted a factually false
+hardcoded absence claim and is a net correctness improvement.
+
+**Verdict: genuine convergence for the current phase.** No open actionable
+P0/P1/P2. Residuals are P3 polish or genuine out-of-phase / keyless-inherent
+limitations, documented above rather than hidden. Full marks are **not**
+claimed (Current-Phase ~93/100, not 100) precisely because real reproducible
+residuals remain — the standard is honesty, not a round number. Deployment's
+40 challenge points remain **PENDING — OUTSIDE CURRENT PHASE**.
