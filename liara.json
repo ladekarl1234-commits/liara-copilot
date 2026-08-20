@@ -1,0 +1,14 @@
+{
+  "platform": "docker",
+  "app": "liara-copilot",
+  "port": 3000,
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "healthCheck": {
+    "command": "wget -qO- http://127.0.0.1:3000/api/health || exit 1",
+    "interval": 30,
+    "timeout": 5,
+    "retries": 3
+  }
+}

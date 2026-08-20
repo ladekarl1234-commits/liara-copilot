@@ -1,0 +1,117 @@
+[
+  {
+    "id": "persian-private-network-apps",
+    "question": "دو تا برنامه دارم که باید به هم درخواست بزنن. توی لیارا چطور بهم وصلشون کنم؟",
+    "category": "persian",
+    "language": "fa",
+    "expectedSources": ["https://docs.liara.ir/paas/details/private-network"],
+    "expectedFacts": [
+      "هر دو برنامه را در یک شبکه خصوصی قرار دهید",
+      "با شناسه برنامه به عنوان hostname به آن درخواست بزنید"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false,
+    "filters": { "product": "paas" }
+  },
+  {
+    "id": "persian-liara-json",
+    "question": "فایل liara.json چیه و چطور بسازمش؟",
+    "category": "persian",
+    "language": "fa",
+    "expectedSources": ["https://docs.liara.ir/paas/liarajson"],
+    "expectedFacts": [
+      "فایل پیکربندی استقرار در مسیر اصلی پروژه است",
+      "با دستور liara init می‌توان آن را ساخت"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false,
+    "filters": { "product": "paas" }
+  },
+  {
+    "id": "english-env-vars",
+    "question": "Where can I see and edit my app's environment variables on Liara?",
+    "category": "english",
+    "language": "en",
+    "expectedSources": ["https://docs.liara.ir/paas/details/envs"],
+    "expectedFacts": [
+      "in the console under the app's settings, variables section",
+      "with the Liara CLI (liara env:set)"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false,
+    "filters": { "product": "paas" }
+  },
+  {
+    "id": "english-postgres-public-access",
+    "question": "How can I connect to my Liara PostgreSQL database from my laptop (outside Liara)?",
+    "category": "english",
+    "language": "en",
+    "expectedSources": ["https://docs.liara.ir/dbaas/postgresql/quick-setup"],
+    "expectedFacts": [
+      "enable public network access for the database",
+      "use the public network connection info"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false,
+    "filters": { "product": "dbaas" }
+  },
+  {
+    "id": "mixed-deploy-port-flag",
+    "question": "فلگ --port توی دستور liara deploy دقیقا what does it do؟ کی لازمه؟",
+    "category": "mixed",
+    "language": "mixed",
+    "expectedSources": [
+      "https://docs.liara.ir/references/cli/deploy-app",
+      "https://docs.liara.ir/paas/dotnet/fix-common-errors/502-bad-gateway"
+    ],
+    "expectedFacts": [
+      "پورتی که برنامه روی آن گوش می‌دهد را به لیارا اعلام می‌کند"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false
+  },
+  {
+    "id": "mixed-bucket-access-level",
+    "question": "چطور access level باکتم رو از private به public تغییر بدم؟",
+    "category": "mixed",
+    "language": "mixed",
+    "expectedSources": ["https://docs.liara.ir/object-storage/how-tos/change-access-level"],
+    "expectedFacts": [
+      "از قسمت تنظیمات باکت، بخش تغییر سطح دسترسی"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false,
+    "filters": { "product": "object-storage" }
+  },
+  {
+    "id": "mixed-ai-baseurl",
+    "question": "baseUrl سرویس هوش مصنوعی لیارا رو از کجا بیارم و چه شکلیه؟",
+    "category": "ai-api",
+    "language": "mixed",
+    "expectedSources": ["https://docs.liara.ir/ai/quick-start"],
+    "expectedFacts": [
+      "پس از ساخت سرویس، baseUrl با آدرس آغازین https://ai.liara.ir تعلق می‌گیرد",
+      "کلید API فقط یک‌بار نمایش داده می‌شود"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false,
+    "filters": { "product": "ai" }
+  },
+  {
+    "id": "ai-openai-connect",
+    "question": "How do I use OpenAI GPT models through Liara's AI service in my code?",
+    "category": "ai-api",
+    "language": "en",
+    "expectedSources": [
+      "https://docs.liara.ir/ai/openai",
+      "https://docs.liara.ir/ai/quick-start"
+    ],
+    "expectedFacts": [
+      "create an AI service to get a baseUrl and API key",
+      "use the OpenAI-compatible API with that baseUrl"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false,
+    "filters": { "product": "ai" }
+  }
+]

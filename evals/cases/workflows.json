@@ -1,0 +1,126 @@
+[
+  {
+    "id": "django-postgres-deploy-workflow",
+    "question": "می‌خوام یه پروژه جنگو با دیتابیس PostgreSQL روی لیارا بالا بیارم. مراحل کامل از ساخت دیتابیس تا اتصال برنامه چیه؟",
+    "category": "multi-hop",
+    "language": "fa",
+    "expectedSources": [
+      "https://docs.liara.ir/dbaas/postgresql/quick-setup",
+      "https://docs.liara.ir/paas/django/how-tos/connect-to-db/postgresql",
+      "https://docs.liara.ir/paas/details/private-network"
+    ],
+    "expectedFacts": [
+      "دیتابیس PostgreSQL را از منوی دیتابیس بسازید",
+      "اطلاعات اتصال را در متغیرهای محیطی برنامه قرار دهید",
+      "برای امنیت بیشتر برنامه و دیتابیس در یک شبکه خصوصی باشند"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false
+  },
+  {
+    "id": "domain-then-ssl",
+    "question": "دامنه mydomain.com رو خریدم. مراحل وصل کردنش به برنامه لیارا و فعال‌سازی SSL چیه؟",
+    "category": "multi-hop",
+    "language": "fa",
+    "expectedSources": [
+      "https://docs.liara.ir/paas/domains/add-domain",
+      "https://docs.liara.ir/paas/domains/enable-ssl"
+    ],
+    "expectedFacts": [
+      "از بخش دامنه‌ها گزینه افزودن دامنه",
+      "سه رکورد DNS (ALIAS/CNAME و TXT و CNAME مربوط به DNS-01) باید تنظیم شوند",
+      "پس از سبز شدن وضعیت رکوردها، گزینه تهیه گواهی SSL"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false,
+    "filters": { "product": "paas" }
+  },
+  {
+    "id": "app-db-private-network",
+    "question": "چطور برنامه و دیتابیسم رو توی یک شبکه خصوصی بذارم که از بیرون قابل دسترسی نباشن و به هم وصل بشن؟",
+    "category": "cross-service",
+    "language": "fa",
+    "expectedSources": [
+      "https://docs.liara.ir/paas/details/private-network",
+      "https://docs.liara.ir/dbaas/postgresql/quick-setup"
+    ],
+    "expectedFacts": [
+      "هنگام ساخت برنامه یا دیتابیس، شبکه خصوصی یکسان را انتخاب کنید",
+      "در شبکه خصوصی با شناسه (نام) سرویس به آن متصل می‌شوید"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false
+  },
+  {
+    "id": "nextjs-object-storage-uploads",
+    "question": "I want my Next.js app on Liara to store user uploads in Liara object storage. How do I connect to the bucket from code?",
+    "category": "cross-service",
+    "language": "en",
+    "expectedSources": [
+      "https://docs.liara.ir/object-storage/how-tos/connect-via-platform/nextjs",
+      "https://docs.liara.ir/object-storage/how-tos/create-key"
+    ],
+    "expectedFacts": [
+      "use the AWS SDK (S3Client) with the Liara endpoint",
+      "set access key, secret key, endpoint and bucket name as environment variables"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false,
+    "filters": { "product": "object-storage", "platform": "nextjs" }
+  },
+  {
+    "id": "app-send-email",
+    "question": "می‌خوام از برنامه‌ام روی لیارا ایمیل تایید ثبت‌نام برای کاربرها بفرستم. با چه سرویسی و چطور؟",
+    "category": "cross-service",
+    "language": "fa",
+    "expectedSources": [
+      "https://docs.liara.ir/email-server/about",
+      "https://docs.liara.ir/email-server/how-tos/connect-via-platform/about"
+    ],
+    "expectedFacts": [
+      "از ایمیل‌سرور لیارا برای ایمیل تراکنشی استفاده کنید",
+      "با اطلاعات SMTP ایمیل‌سرور از هر پلتفرمی متصل می‌شوید"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false
+  },
+  {
+    "id": "liara-dns-setup",
+    "question": "می‌خوام DNS دامنه‌ام رو بدم به سرویس DNS خود لیارا. مراحلش چیه؟",
+    "category": "domain-dns",
+    "language": "fa",
+    "expectedSources": ["https://docs.liara.ir/dns-management-system/quick-setup"],
+    "expectedFacts": [
+      "از منوی DNS دامنه را بدون www و https اضافه کنید",
+      "NSهای لیارا را در سامانه ثبت دامنه (مثلاً ایرنیک برای .ir) تنظیم کنید"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false
+  },
+  {
+    "id": "cloudflare-flexible",
+    "question": "My domain is on Cloudflare and my app is on Liara. What SSL mode should I use in Cloudflare?",
+    "category": "domain-dns",
+    "language": "en",
+    "expectedSources": ["https://docs.liara.ir/paas/domains/add-domain"],
+    "expectedFacts": ["in Cloudflare set SSL to Flexible"],
+    "forbiddenClaims": ["set Cloudflare SSL to Full (strict)"],
+    "shouldClarify": false,
+    "filters": { "product": "paas" }
+  },
+  {
+    "id": "domain-records-meaning",
+    "question": "وقتی دامنه رو به برنامه اضافه می‌کنم لیارا سه تا رکورد DNS میده؛ هر کدوم برای چیه؟",
+    "category": "domain-dns",
+    "language": "fa",
+    "expectedSources": ["https://docs.liara.ir/paas/domains/add-domain"],
+    "expectedFacts": [
+      "رکورد ALIAS/CNAME برای هدایت دامنه به سرور لیارا",
+      "رکورد TXT برای احراز مالکیت دامنه",
+      "رکورد CNAME (DNS-01 Challenge) برای صدور و تمدید گواهی SSL"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false,
+    "filters": { "product": "paas" }
+  }
+]

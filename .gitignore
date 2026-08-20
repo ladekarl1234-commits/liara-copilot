@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+.env
+.env.local
+data/liara-docs/
+data/index/
+data/cache/
+data/runtime/
+*.tsbuildinfo
+.DS_Store
+.playwright-cli/

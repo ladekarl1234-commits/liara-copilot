@@ -1,0 +1,113 @@
+[
+  {
+    "id": "ssl-free-one-click",
+    "question": "آیا لیارا گواهی SSL رایگان میده؟ تمدیدش چطوریه؟",
+    "category": "simple-factual",
+    "language": "fa",
+    "expectedSources": ["https://docs.liara.ir/paas/domains/enable-ssl"],
+    "expectedFacts": [
+      "SSL رایگان با یک کلیک از صفحه مدیریت دامنه فعال می‌شود",
+      "تمدید SSL به صورت خودکار توسط لیارا انجام می‌شود"
+    ],
+    "forbiddenClaims": ["برای SSL باید هزینه جداگانه پرداخت شود"],
+    "shouldClarify": false
+  },
+  {
+    "id": "default-subdomain-suffix",
+    "question": "آدرس پیش‌فرض برنامه بعد از ساخت در لیارا چیه؟ میشه غیرفعالش کرد؟",
+    "category": "simple-factual",
+    "language": "fa",
+    "expectedSources": ["https://docs.liara.ir/paas/domains/default-subdomain"],
+    "expectedFacts": [
+      "زیردامنه پیش‌فرض با پسوند liara.run ساخته می‌شود",
+      "می‌توان آن را از بخش تنظیمات غیرفعال کرد"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false
+  },
+  {
+    "id": "cli-install",
+    "question": "How do I install the Liara CLI?",
+    "category": "simple-factual",
+    "language": "en",
+    "expectedSources": ["https://docs.liara.ir/references/cli/install"],
+    "expectedFacts": ["npm install -g @liara/cli", "requires Node.js/npm installed"],
+    "forbiddenClaims": [],
+    "shouldClarify": false
+  },
+  {
+    "id": "email-pop3-imap",
+    "question": "آیا ایمیل‌سرور لیارا از POP3 یا IMAP پشتیبانی می‌کنه؟",
+    "category": "simple-factual",
+    "language": "fa",
+    "expectedSources": ["https://docs.liara.ir/email-server/about"],
+    "expectedFacts": [
+      "پروتکل‌های POP3/IMAP پشتیبانی نمی‌شوند",
+      "سرویس برای ایمیل تراکنشی طراحی شده و صندوق پستی نیست"
+    ],
+    "forbiddenClaims": ["POP3 و IMAP قابل استفاده هستند"],
+    "shouldClarify": false
+  },
+  {
+    "id": "postgres-extensions",
+    "question": "Which PostgreSQL extensions does Liara offer?",
+    "category": "database",
+    "language": "en",
+    "expectedSources": [
+      "https://docs.liara.ir/dbaas/postgresql/quick-setup",
+      "https://docs.liara.ir/dbaas/postgresql/extensions"
+    ],
+    "expectedFacts": ["PostGIS", "pgvector"],
+    "forbiddenClaims": [],
+    "shouldClarify": false,
+    "filters": { "product": "dbaas" }
+  },
+  {
+    "id": "pgvector-hnsw",
+    "question": "آیا افزونه pgvector لیارا از ایندکس HNSW پشتیبانی می‌کنه؟",
+    "category": "database",
+    "language": "fa",
+    "expectedSources": ["https://docs.liara.ir/dbaas/postgresql/quick-setup"],
+    "expectedFacts": ["افزونه pgvector لیارا از HNSW indexing پشتیبانی نمی‌کند"],
+    "forbiddenClaims": ["HNSW پشتیبانی می‌شود"],
+    "shouldClarify": false,
+    "filters": { "product": "dbaas" }
+  },
+  {
+    "id": "discover-analytics-tool",
+    "question": "می‌خوام یه جایگزین self-hosted برای گوگل آنالیتیکس روی لیارا راه بندازم. چی پیشنهاد میدید؟",
+    "category": "service-discovery",
+    "language": "fa",
+    "expectedSources": ["https://docs.liara.ir/one-click-apps/matomo/quick-start"],
+    "expectedFacts": ["Matomo به عنوان برنامه آماده (one-click) قابل راه‌اندازی است"],
+    "forbiddenClaims": [],
+    "shouldClarify": false
+  },
+  {
+    "id": "discover-file-storage",
+    "question": "برای نگهداری فایل‌های آپلودی کاربرانم (عکس و ویدیو) کدوم سرویس لیارا مناسبه؟",
+    "category": "service-discovery",
+    "language": "fa",
+    "expectedSources": ["https://docs.liara.ir/object-storage/about"],
+    "expectedFacts": [
+      "فضای ذخیره‌سازی ابری (Object Storage) لیارا",
+      "سازگار با پروتکل S3"
+    ],
+    "forbiddenClaims": [],
+    "shouldClarify": false
+  },
+  {
+    "id": "windows-vps",
+    "question": "Does Liara offer Windows virtual machines?",
+    "category": "english",
+    "language": "en",
+    "expectedSources": [
+      "https://docs.liara.ir/iaas/windowsserver/choose-version",
+      "https://docs.liara.ir/iaas/about"
+    ],
+    "expectedFacts": ["Windows Server is available on Liara's cloud VM (IaaS) service"],
+    "forbiddenClaims": ["Liara only supports Linux servers"],
+    "shouldClarify": false,
+    "filters": { "product": "iaas" }
+  }
+]
