@@ -18,10 +18,15 @@ const OVERRIDE_PATTERNS: RegExp[] = [
   // docs question. Only the assistant's own secrets/prompt are protected
   // (covered by "your (system) prompt/instructions" below) (SEC3-001).
   /\b(reveal|print|show|repeat|display|output|leak|expose|give me|tell me)\b[\s\S]{0,40}\b(system prompt|system message|your (instructions|prompt|rules|guidelines|configuration)|the (text|instructions|prompt) above)/i,
-  // exfiltrating the assistant's OWN key/secret (framed as "your …"), not the
-  // user's ("my … in the panel" is legit — SEC3-001). "your password/token/
-  // credential/secret" is still an exfil attempt on the assistant (SECV-001).
-  /\byour\b[\s\S]{0,20}\b(api[\s_-]?key|secret|secrets|credential|credentials|password|access token|token)\b/i,
+  // exfiltrating the assistant's OWN secret — requires an EXFIL VERB directed at
+  // "your <secret>". This catches "reveal your password / print your token /
+  // show me your credentials" (SECV-001) WITHOUT false-blocking legit developer
+  // questions that merely contain the words ("what's your token limit", "how do
+  // I use my api token") which have no exfil verb / say "my" (COMP-R5-01).
+  // an EXFIL verb (imperative, not a question) directed at "your <secret>".
+  // "what's your token limit" is a QUESTION → not matched (no exfil verb);
+  // "print/reveal/show your token" IS an exfil attempt → matched.
+  /\b(reveal|print|show(\s+me)?|give\s+me|leak|expose|dump|send\s+me)\b[\s\S]{0,20}\byour\b[\s\S]{0,15}\b(api[\s_-]?key|secret|secrets|credential|credentials|password|token)\b/i,
   // English: "what are your instructions/rules" / "repeat everything above"
   /\b(what (are|is) your (system )?(instructions|rules|prompt|guidelines)|repeat (everything|the text|all text|what('| i)s) (above|before)|print everything above)\b/i,
   // English: "you are now" / "act as" role-reassignment to escape policy

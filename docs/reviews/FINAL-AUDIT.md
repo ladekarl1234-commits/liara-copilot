@@ -4,9 +4,9 @@ Repository: https://github.com/ladekarl1234-commits/liara-copilot
 
 ## Final Git commit
 
-`842f452` on `main`, pushed to origin (remote verified in sync). Phase-II fix
+`c224ce5` on `main`, pushed to origin (remote verified in sync). Phase-II fix
 lineage: `67caf52` (Phase I complete) → `a6de9e8` → `cd75e69` → `1c35583` →
-`77eb3ff` → `b1d8604` → `842f452` (+ review-artifact commits).
+`77eb3ff` → `b1d8604` → `c224ce5` (+ review-artifact commits).
 
 ## Two scorecards (honest — not inflated)
 
@@ -22,7 +22,7 @@ hit@1 0.44; most answers route to the strong model), not unfound defects.
 
 | Criterion | Max | Projected | Basis |
 |---|---:|---:|---|
-| Answer quality & correctness | 80 | **~66** | hit@5 0.813 (lexical-only *lower bound*; live pipeline adds LLM rewriting), strong evidence gate, grounded answers + claim verification, injection + absent-feature refusal. Model-authored prose untested (no key). |
+| Answer quality & correctness | 80 | **~66** | hit@5 0.813 (lexical-only *lower bound*; live pipeline adds LLM rewriting), strong evidence gate, grounded answers + claim verification, honest "couldn't find it" refusal (no fabricated absence claims). Model-authored prose untested (no key). |
 | UI / UX | 55 | **~50** | minimal RTL-correct product, Fix + Guide flows visible, code UX, a11y, mobile 320–1440. Model-authored code-block rendering untested (no key). |
 | Agentic & personalization | 50 | **~43** | intent, structured state, negation-with-switch, ranked Fix hypotheses, Guide checklist, profile scaffold. Keyless ledger is a snapshot (advances with a key). |
 | Security, reliability & monitoring | 50 | **~46** | 0 npm vulns, prompt-injection detector + fencing, rate limit (IP + global backstop), streamed body caps, structured logs, hashed PII, health 503, bounded retries/timeouts. |
@@ -41,11 +41,12 @@ claimed. No 300/300 is asserted.
 | II-1 | 12 judges | `67caf52` | 0 | 7 | 30 | 27 | chip refusals, dup chunks, gate-high-on-wrong-page, keyless Fix/Guide inert, docker public/, token accounting | Persian synonyms, dedup, injection detector, agentic state, npm 0 vulns, deploy |
 | II-2 | 8 judges | `1c35583` | 0 | 0 | 17 | 13 | injection precision, knownError regression, SSL bucket, niche over-fire | scoped patterns, active-flow guard, tokenized triggers (hit@5 →0.813) |
 | II-3 (acceptance) | 6 judges | `77eb3ff` | 0 | 1 | 10 | 13 | Guide invisible keyless, exfil FP regression, unsupported-feature phrasing, negation over-fire | seedWorkflow, exfil scoping, absent-feature, gate demotion, negation adjacency |
-| II-4 (verify) | 3 judges | `b1d8604` | 0 | 0 | 0 | (verdict pending in this file's closing note) | — | — |
+| II-4 (verify) | 3 judges | `b1d8604` | 0 | 1 | 2 | — | fabricated absent-feature list false-refused documented k8s/GPU/refund | removed the list; restored exfil + abandonment negation (`c224ce5`) |
+| II-5 (reverify) | 2 judges | `c224ce5` | 0 | 0 | 0 | — | k8s/GPU/refund now answer; honest gate refusal for truly-unanswerable | — |
 
 ## Evidence (all re-run on the shipped tree)
 
-- `npx tsc --noEmit` → clean · `npx vitest run` → **163 passed / 15 files** ·
+- `npx tsc --noEmit` → clean · `npx vitest run` → **161 passed / 15 files** ·
   `npm run build` → Compiled successfully (standalone) · `npm audit` → **0 vulnerabilities**.
 - Retrieval eval (`evals/results/retrieval-2026-08-20.json`, lexical-only, 61
   cases): **hit@1 0.44 · hit@3 0.75 · hit@5 0.813 · MRR 0.595 · gate 0.923
@@ -53,9 +54,10 @@ claimed. No 300/300 is asserted.
 - Live (keyless, localhost:3000): health 200 (index loaded) / 503 on missing
   index; 4 landing chips answer; Persian question → grounded sources; error
   paste → **Fix flow** (ranked hypotheses + one diagnostic step); Django+PG →
-  **Guide** workflow checklist; GPU/refund → honest "not offered"; injection →
-  refusal (0 model calls); own-credential question → answered; oversize → 413;
-  21st req/min → 429 + retry-after.
+  **Guide** workflow checklist; documented feature (k8s mirror) → retrieves +
+  answers; truly-unanswerable → honest "couldn't find it" (no false absence
+  claim); injection → refusal (0 model calls); own-credential question →
+  answered; oversize → 413; 21st req/min → 429 + retry-after.
 - UI (Playwright, 320–1440px): RTL-correct, no overflow, Fix HypothesisList +
   Guide checklist render, dark mode, labeled a11y. Screenshots under
   `docs/reviews/*/screenshots/`.

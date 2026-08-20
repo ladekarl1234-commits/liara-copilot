@@ -140,8 +140,10 @@ export interface DeterministicSignals {
   negatedDatabase?: boolean;
 }
 
-// "nextjs رو دیگه استفاده نمی‌کنم" — abandonment cue after the platform.
-const NEG_ABANDON_RE = /(استفاده\s*نمی|دیگه\s*(ازش|از این)?\s*استفاده|رهاش? کرد|کنار گذاشت|no longer (use|using)|stopped using|dropped)/i;
+// "nextjs رو دیگه استفاده نمی‌کنم" — abandonment cue after the platform. Uses
+// SPECIFIC phrases, not bare "dropped" (which is common in error reports like
+// "the connection dropped" and would mis-label an active platform — COMP-R5-02).
+const NEG_ABANDON_RE = /(استفاده\s*نمی|دیگه\s*(ازش|از این)?\s*استفاده|رهاش? کرد|کنار گذاشت|no longer (use|using|need)|stopped using|dropped it|moved away from)/i;
 
 /** True when a negation cue sits directly before or (near-)after the matched term. */
 function isNegated(message: string, termRe: RegExp): boolean {
