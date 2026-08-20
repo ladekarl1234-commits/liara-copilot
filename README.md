@@ -199,9 +199,19 @@ Shipping a vector-enabled image requires building `data/index` with
   eval ran lexical-only.
 - **Answers-mode eval has not been run** — no AI key was configured for this
   submission's eval pass.
-- **Anchor coverage is 36.1%** of chunks (recovered from authored MDX
+- **Anchor coverage is 36.6%** of chunks (recovered from authored MDX
   `<Section id>` props); the remainder cite the page URL without a deep
   anchor.
+- **The retrieval gate is lexical, and by design not a topic classifier.** It
+  reliably refuses gibberish and all-stopword input (gate `low`), but an
+  off-topic question that shares a real Liara word ("cake **recipe**" →
+  "recipe"; a cooking "**دستور**" collides with CLI "دستور/command") lands at
+  `medium` — lexically indistinguishable from a legitimate one-concept query.
+  Those are defended at the next layer: the answer model is instructed to
+  answer only from evidence and otherwise say "not in the docs", and the
+  claim-verification stage flags unsupported claims. Two eval gate cases
+  (`crlf-bad-interpreter`, `adversarial-destructive`) are accepted debt for
+  the same reason — see [docs/EVALUATION.md](docs/EVALUATION.md).
 
 ## Future work
 
