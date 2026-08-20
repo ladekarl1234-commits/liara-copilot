@@ -75,7 +75,12 @@ function walk(dir: string): string[] {
 }
 
 export function parseLlmsFile(raw: string): { url: string; title: string; body: string } | null {
-  const text = raw.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+  const text = raw
+    .replace(/^﻿/, '')
+    .replace(/\r\n?/g, '\n')
+    // inline base64 blobs are retrieval noise and blow up chunk/prompt budgets
+    // (measured: one 48KB data:image URI in ai/ai-sdk-ui/chatbot.md)
+    .replace(/data:[a-z/+.-]+;base64,[A-Za-z0-9+/=]{200,}/g, '[inline-data-removed]');
   const linkMatch = text.match(/^Original link:\s*(https:\/\/docs\.liara\.ir\S*)/m);
   if (!linkMatch) return null;
   const url = linkMatch[1];
@@ -207,7 +212,17 @@ export function splitLong(text: string): string[] {
     }
   }
   if (acc.trim()) out.push(acc.trim());
-  return out.filter(Boolean);
+  // absolute enforcement: a single blank-line-free block (huge table, minified
+  // content) must still respect the cap — slice as a last resort
+  return out
+    .filter(Boolean)
+    .flatMap((piece) =>
+      piece.length <= MAX_CHUNK_CHARS * 1.5
+        ? [piece]
+        : Array.from({ length: Math.ceil(piece.length / MAX_CHUNK_CHARS) }, (_, i) =>
+            piece.slice(i * MAX_CHUNK_CHARS, (i + 1) * MAX_CHUNK_CHARS),
+          ),
+    );
 }
 
 function classify(text: string): DocChunk['contentType'] {

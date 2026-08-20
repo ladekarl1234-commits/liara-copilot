@@ -101,9 +101,13 @@ async function runRetrieval(cases: EvalCase[]) {
     a.confidence[res.confidence] = (a.confidence[res.confidence] ?? 0) + 1;
 
     if (!c.expectedSources.length) {
-      // gate case: unsupported/ambiguous questions should not come back 'high'
+      // gate case. unsupported/adversarial questions MUST come back 'low' —
+      // 'not high' would be true even for a gate that never fires (a hardcoded
+      // 'medium' scored 9/9 before; caught in review). ambiguous questions
+      // only need to stay below 'high' (the planner asks the clarification).
       a.gateN++;
-      const ok = res.confidence !== 'high';
+      const strict = c.category === 'unsupported' || c.category === 'adversarial';
+      const ok = strict ? res.confidence === 'low' : res.confidence !== 'high';
       if (ok) a.gateOk++;
       perCase.push({ id: c.id, category: c.category, gate: true, confidence: res.confidence, gateOk: ok });
       continue;
@@ -177,6 +181,26 @@ async function runRetrieval(cases: EvalCase[]) {
     cases: perCase,
   };
   writeResult('retrieval', summary);
+
+  // regression floors: a retrieval regression must FAIL the run, not silently
+  // rewrite a JSON nobody diffs. GATE_MIN is 0.75, not higher, because two
+  // gate cases (an adversarial "delete another account" request and a Docker
+  // CRLF error) carry genuine Liara vocabulary and land at coverage 0.39/0.46
+  // — indistinguishable from 11 legitimate troubleshooting cases in the same
+  // band. The LEXICAL gate cannot separate them without wrongly refusing those
+  // 11; they are defended downstream (answer-prompt refusal + claim
+  // verification), measured in --answers mode. See docs/EVALUATION.md.
+  const HIT5_MIN = 0.6;
+  const GATE_MIN = 0.75;
+  if (summary.hit5 < HIT5_MIN) {
+    console.error(`FAIL: hit@5 ${summary.hit5.toFixed(3)} below floor ${HIT5_MIN}`);
+    process.exitCode = 1;
+  }
+  if (summary.gateAccuracy !== null && summary.gateAccuracy < GATE_MIN) {
+    console.error(`FAIL: gate-accuracy ${summary.gateAccuracy.toFixed(3)} below floor ${GATE_MIN}`);
+    process.exitCode = 1;
+  }
+
   console.log(
     `\noverall hit@5=${summary.hit5.toFixed(3)} MRR=${summary.mrr.toFixed(3)} gate-accuracy=${summary.gateAccuracy?.toFixed(3) ?? 'n/a'}`,
   );

@@ -20,8 +20,11 @@ export function getOrCreateSession(id?: string): SessionState {
       return s;
     }
   }
+  // Unknown/expired ids are NEVER adopted: a client cannot pre-create a
+  // guessable session id and wait for someone to collide with it. Session
+  // secrecy rests on the 122 bits of randomUUID entropy.
   const fresh: SessionState = {
-    id: id && /^[a-z0-9-]{8,40}$/.test(id) ? id : crypto.randomUUID(),
+    id: crypto.randomUUID(),
     language: 'fa',
     profile: {},
     context: { triedActions: [] },

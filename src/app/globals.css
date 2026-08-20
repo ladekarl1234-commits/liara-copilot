@@ -714,3 +714,10 @@ button:not(:disabled) {
 .composer-area {
   padding-block-end: max(env(safe-area-inset-bottom), 0.9rem);
 }
+
+.source-n {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-inline-end: 0.35em;
+}

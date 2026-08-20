@@ -54,3 +54,29 @@ export function detectLanguage(text: string): 'fa' | 'en' {
 export function normalizedKey(text: string): string {
   return tokenizeFa(text).join(' ');
 }
+
+// Stopwords carry no evidence about WHICH doc answers a query: function words
+// (fa+en) plus domain-ubiquitous terms (liara appears in every page).
+const STOPWORDS = new Set([
+  // fa function words
+  'از', 'در', 'به', 'با', 'که', 'را', 'و', 'یا', 'برای', 'تا', 'هم', 'این',
+  'آن', 'چه', 'کدام', 'چیست', 'چیه', 'چطور', 'چگونه', 'چرا', 'کی', 'کجا',
+  'آیا', 'اگر', 'باید', 'بدون', 'روی', 'مثل', 'مثلا', 'لطفا', 'سلام', 'خب',
+  'کنم', 'کنید', 'کنیم', 'کرد', 'کردم', 'میکنم', 'میشود', 'میشه', 'نمیشه',
+  'شود', 'بشه', 'است', 'هست', 'نیست', 'دارم', 'دارد', 'داره', 'ندارم',
+  'شده', 'بشود', 'من', 'ما', 'شما', 'خودم', 'وقتی', 'الان', 'دیگه', 'یک',
+  'چند', 'همه', 'فقط', 'ولی', 'اما', 'پس', 'بعد', 'قبل', 'داخل', 'روش',
+  // en function words
+  'how', 'do', 'does', 'the', 'my', 'your', 'a', 'an', 'to', 'for', 'on',
+  'in', 'with', 'can', 'i', 'is', 'are', 'it', 'and', 'of', 'or', 'what',
+  'why', 'when', 'where', 'not', 'no', 'about', 'me', 'we', 'you', 'should',
+  'would', 'there', 'this', 'that', 'get', 'have', 'has', 'want', 'need',
+  'please', 'help',
+  // domain-ubiquitous
+  'لیارا', 'liara', 'برنامه', 'app', 'application',
+]);
+
+/** Tokens that actually discriminate between docs (stopwords removed). */
+export function informativeTokens(text: string): string[] {
+  return tokenizeFa(text).filter((t) => !STOPWORDS.has(t));
+}

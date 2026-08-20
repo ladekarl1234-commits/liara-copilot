@@ -7,11 +7,11 @@ import type { ChatEvent, Citation, ModelProvider, RetrievalResult, ScoredChunk, 
 import { config } from '@/lib/config';
 import { search, loadIndex, citationUrl, IndexMissingError } from '@/lib/retrieval/index';
 import { normalizedKey, detectLanguage } from '@/lib/text/persian';
-import { getProvider, ModelError } from '@/lib/ai/provider';
+import { getProvider, ModelError, ClientAbortError } from '@/lib/ai/provider';
 import { pickAnswerRoute, estimateCostUsd, addUsage } from '@/lib/ai/router';
 import { makePlan } from '@/lib/agent/plan';
 import { verifyAnswer } from '@/lib/agent/verify';
-import { answerSystemPrompt, CANNED } from '@/lib/agent/prompts';
+import { answerSystemPrompt, CANNED, sanitizeFences } from '@/lib/agent/prompts';
 import { getOrCreateSession, applyPatch, pushTurn, contextChips, save } from '@/lib/state/sessions';
 import { log, logMetrics } from '@/lib/obs/log';
 import { recordTrace } from '@/lib/obs/trace';
@@ -73,7 +73,7 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     }
 
     emit({ type: 'stage', stage: 'understanding' });
-    const planned = await makePlan(message, session, provider);
+    const planned = await makePlan(sanitizeFences(message), session, provider, signal);
     const plan = planned.plan;
     usage = addUsage(usage, planned.usage);
     intent = plan.intent;
@@ -154,7 +154,7 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
       model: route.model,
       messages: [
         { role: 'system', content: answerSystemPrompt(session, retrieval.chunks) },
-        { role: 'user', content: `<user_data>\n${message}\n</user_data>` },
+        { role: 'user', content: `<user_data>\n${sanitizeFences(message)}\n</user_data>` },
       ],
       maxTokens: 1400,
       temperature: 0.2,
@@ -172,9 +172,19 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     emitState(emit, session);
 
     // --- verification (optional) ---
-    const v = await verifyAnswer(answer, retrieval.chunks, provider);
+    const v = await verifyAnswer(answer, retrieval.chunks, provider, signal);
     usage = addUsage(usage, v.usage);
-    if (v.checked) emit({ type: 'verification', note: v.note });
+    if (v.checked) {
+      // unsupported claims must reach the USER, not only the server log
+      const note =
+        v.unsupportedCount > 0
+          ? (v.note ??
+            (plan.language === 'fa'
+              ? 'برخی از ادعاهای این پاسخ در مستندات رسمی تأیید نشد؛ با احتیاط استفاده کنید.'
+              : 'Some claims in this answer could not be verified against the official docs; use with care.'))
+          : undefined;
+      emit({ type: 'verification', note });
+    }
     if (v.unsupportedCount > 0) {
       log('warn', 'ungrounded_claims', { requestId, count: v.unsupportedCount });
     }
@@ -189,6 +199,14 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     setLastAction(session.id, plan.action);
     record('answered');
   } catch (e) {
+    if (e instanceof ClientAbortError || signal?.aborted) {
+      // the client is gone: no error event, no error metric — but the turn
+      // still counts so a retry is not mistaken for a stateless first turn
+      pushTurn(session, message, '<aborted>');
+      log('info', 'chat_client_abort', { requestId });
+      record('client_abort');
+      return;
+    }
     errorCategory = e instanceof ModelError ? e.code : e instanceof IndexMissingError ? 'index_missing' : 'internal';
     log('error', 'chat_failed', { requestId, category: errorCategory, message: (e as Error).message });
     emit({
@@ -196,6 +214,9 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
       code: errorCategory as never,
       message: errorMessage(errorCategory, session.language),
     });
+    // failed turns are still turns: keeps the FAQ-cache/turn-0 logic honest
+    // and lets the next plan call see that this question was already asked
+    pushTurn(session, message, `<error:${errorCategory}>`);
     record('error');
   }
 
@@ -261,19 +282,28 @@ function toCitations(chunks: ScoredChunk[]): Citation[] {
   return out;
 }
 
-/** Sources the answer actually referenced ([n] markers), else the top 3. */
-function citationsFromAnswer(answer: string, evidence: ScoredChunk[]): Citation[] {
-  const used: ScoredChunk[] = [];
+/**
+ * Sources the answer actually referenced ([n] markers, scanned OUTSIDE code
+ * fences so `argv[2]` never becomes a citation), else the top 3. Numbered
+ * citations keep their [n] so the UI can show the same number the user sees
+ * in the text — never re-ordered, never deduped away.
+ */
+export function citationsFromAnswer(answer: string, evidence: ScoredChunk[]): Citation[] {
+  const prose = answer.replace(/```[\s\S]*?(```|$)/g, ' ').replace(/`[^`\n]*`/g, ' ');
+  const out: Citation[] = [];
   const seen = new Set<number>();
-  for (const m of answer.matchAll(/\[(\d{1,2})\]/g)) {
+  for (const m of prose.matchAll(/\[(\d{1,2})\]/g)) {
     const n = Number(m[1]);
     if (n >= 1 && n <= evidence.length && !seen.has(n)) {
       seen.add(n);
-      used.push(evidence[n - 1]);
+      const c = evidence[n - 1].chunk;
+      out.push({ n, title: c.title, url: citationUrl(c), product: c.product, heading: c.heading });
     }
   }
-  return toCitations(used.length ? used : evidence.slice(0, 3));
+  out.sort((a, b) => (a.n ?? 0) - (b.n ?? 0));
+  return out.length ? out : toCitations(evidence.slice(0, 3));
 }
+
 
 function cacheKeyFor(message: string, lang: string): string | null {
   const key = normalizedKey(message);

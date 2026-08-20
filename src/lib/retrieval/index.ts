@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import MiniSearch, { type Options as MiniOptions, type SearchResult } from 'minisearch';
 import type { DocChunk, RetrievalFilters, RetrievalResult, ScoredChunk } from '@/types';
-import { tokenizeFa } from '@/lib/text/persian';
+import { tokenizeFa, informativeTokens } from '@/lib/text/persian';
 import { config } from '@/lib/config';
 
 export const LEXICAL_VERSION = 2; // bump when miniOptions/tokenization change
@@ -109,18 +109,20 @@ export async function search(
 ): Promise<RetrievalResult> {
   const t0 = Date.now();
   const idx = index ?? loadIndex();
+  // empty strings from a sloppy model plan must not build an always-true filter
+  filters = {
+    ...(filters.product?.trim() ? { product: filters.product.trim() } : {}),
+    ...(filters.platform?.trim() ? { platform: filters.platform.trim() } : {}),
+  };
   const qs = queries.filter(Boolean).slice(0, 3);
   if (!qs.length) {
     return { chunks: [], confidence: 'low', queries: [], filters, latencyMs: 0 };
   }
 
   const rrf = new Map<string, number>();
-  let bestCoverage = 0;
   let bestScorePerToken = 0;
-  let listCount = 0;
 
   const add = (ids: string[]) => {
-    listCount++;
     ids.forEach((id, rank) => rrf.set(id, (rrf.get(id) ?? 0) + 1 / (RRF_K + rank)));
   };
 
@@ -141,12 +143,7 @@ export async function search(
     }
     results = results.slice(0, CANDIDATES_PER_QUERY);
     if (results.length && qTokens.length) {
-      const unique = new Set(qTokens).size;
-      // queryTerms = the query-side terms that actually matched (bounded by
-      // the query itself, unlike `terms` which lists expanded index terms)
-      const matched = new Set(results[0].queryTerms ?? results[0].terms ?? []);
-      bestCoverage = Math.max(bestCoverage, Math.min(1, matched.size / unique));
-      bestScorePerToken = Math.max(bestScorePerToken, results[0].score / unique);
+      bestScorePerToken = Math.max(bestScorePerToken, results[0].score / new Set(qTokens).size);
     }
     add(results.map((r) => String(r.id)));
   }
@@ -179,23 +176,28 @@ export async function search(
   }
   fused.sort((a, b) => b.score - a.score);
 
-  // evidence selection: relative cutoff + char budget
+  // evidence selection: relative cutoff + char budget (enforced from chunk #1)
   const top = fused[0]?.score ?? 0;
   const selected: ScoredChunk[] = [];
   let chars = 0;
   for (const s of fused) {
     if (selected.length >= MAX_EVIDENCE_CHUNKS) break;
     if (s.score < top * 0.35) break;
-    if (chars + s.chunk.text.length > MAX_EVIDENCE_CHARS && selected.length >= 2) break;
+    if (chars + s.chunk.text.length > MAX_EVIDENCE_CHARS && selected.length >= 1) break;
     selected.push(s);
     chars += s.chunk.text.length;
   }
 
-  // ponytail: heuristic confidence gate (term coverage + BM25 strength +
-  // fusion margin), thresholds tuned on evals/cases via
+  // Exact-match coverage of informative query tokens (stopwords removed)
+  // against the top selected chunks. Fuzzy/prefix matches deliberately do NOT
+  // count — they are what let a cake recipe reach 'medium' before.
+  const coverage = exactCoverage(qs, selected.slice(0, 3));
+
+  // ponytail: heuristic confidence gate (informative-token coverage + BM25
+  // strength + fusion margin), thresholds tuned on evals/cases via
   // `npm run evaluate:retrieval`; upgrade to a learned gate if eval demands it.
   const margin = fused.length > 1 ? fused[0].score / fused[1].score : fused.length ? 2 : 0;
-  const confidence = gateConfidence(fused.length, bestCoverage, bestScorePerToken, margin);
+  const confidence = gateConfidence(fused.length, coverage, bestScorePerToken, margin);
 
   return {
     chunks: selected,
@@ -203,22 +205,54 @@ export async function search(
     queries: qs,
     filters,
     latencyMs: Date.now() - t0,
-    signals: { coverage: round3(bestCoverage), scorePerToken: round3(bestScorePerToken), margin: round3(margin) },
+    signals: { coverage: round3(coverage.ratio), scorePerToken: round3(bestScorePerToken), margin: round3(margin) },
   };
 }
 
+/**
+ * Exact-match coverage: which informative tokens of any ORIGINAL query
+ * (never the synthetic expanded ones) literally appear in the top chunks'
+ * title/heading/text. Returns the best per-query ratio + that query's
+ * informative token count.
+ */
+export function exactCoverage(
+  queries: string[],
+  topChunks: ScoredChunk[],
+): { ratio: number; informative: number } {
+  if (!topChunks.length) return { ratio: 0, informative: 0 };
+  const haystack = new Set(
+    topChunks.flatMap((s) => tokenizeFa(`${s.chunk.title} ${s.chunk.heading ?? ''} ${s.chunk.text}`)),
+  );
+  let best = { ratio: 0, informative: 0 };
+  for (const q of queries) {
+    const tokens = [...new Set(informativeTokens(q))];
+    if (!tokens.length) continue;
+    const matched = tokens.filter((t) => haystack.has(t)).length;
+    const ratio = matched / tokens.length;
+    if (ratio > best.ratio || (ratio === best.ratio && tokens.length > best.informative)) {
+      best = { ratio, informative: tokens.length };
+    }
+  }
+  return best;
+}
+
 // Thresholds measured on evals/cases (see docs/EVALUATION.md): every
-// ambiguous/unsupported/adversarial case must NOT come back 'high'; 'low'
-// blocks answering entirely. 'high' additionally routes to the fast model and
-// allows FAQ caching, so it is deliberately conservative.
+// unsupported/adversarial case must come back 'low' (the orchestrator refuses
+// to answer on 'low'); ambiguous cases must not be 'high'. 'high'
+// additionally routes to the fast model and allows FAQ caching, so it is
+// deliberately conservative: it requires >=70% exact coverage of >=2
+// informative tokens. A query whose informative tokens are all absent from
+// the top evidence is 'low' regardless of BM25 score.
 export function gateConfidence(
   resultCount: number,
-  coverage: number,
+  coverage: { ratio: number; informative: number },
   scorePerToken: number,
   margin: number,
 ): RetrievalResult['confidence'] {
-  if (!resultCount || coverage < 0.25 || scorePerToken < 4) return 'low';
-  if (coverage >= 0.6 && scorePerToken >= 25 && margin >= 1.05) return 'high';
+  if (!resultCount) return 'low';
+  if (coverage.informative === 0) return 'medium'; // pure-stopword follow-up: planner decides
+  if (coverage.ratio < 0.34) return 'low';
+  if (coverage.ratio >= 0.7 && coverage.informative >= 2 && scorePerToken >= 25 && margin >= 1.05) return 'high';
   return 'medium';
 }
 
@@ -274,8 +308,10 @@ function buildFilter(idx: LoadedIndex, filters: RetrievalFilters) {
   return (result: SearchResult) => {
     const c = idx.byId.get(String(result.id));
     if (!c) return false;
+    // both filters apply independently; a chunk with no platform of its own
+    // (e.g. general PaaS pages) passes a platform filter
     if (filters.platform && c.platform && c.platform !== filters.platform) return false;
-    if (filters.product && filters.platform === undefined && c.product !== filters.product) return false;
+    if (filters.product && c.product !== filters.product) return false;
     return true;
   };
 }

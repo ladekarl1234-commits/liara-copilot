@@ -2,15 +2,16 @@
   "date": "2026-08-20",
   "total": 57,
   "sourced": 48,
-  "hit1": 0.3125,
-  "hit3": 0.625,
-  "hit5": 0.6875,
-  "mrr": 0.47291666666666665,
+  "hit1": 0.3333333333333333,
+  "hit3": 0.6666666666666666,
+  "hit5": 0.7083333333333334,
+  "mrr": 0.49548611111111107,
   "gateCases": 9,
-  "gateAccuracy": 1,
+  "gateAccuracy": 0.7777777777777778,
   "confidence": {
-    "medium": 49,
-    "high": 8
+    "low": 15,
+    "medium": 39,
+    "high": 3
   },
   "perCategory": {
     "ambiguous": {
@@ -22,7 +23,7 @@
       "gateN": 2,
       "gateOk": 2,
       "confidence": {
-        "medium": 2
+        "low": 2
       }
     },
     "unsupported": {
@@ -32,9 +33,10 @@
       "hit5": null,
       "mrr": null,
       "gateN": 5,
-      "gateOk": 5,
+      "gateOk": 4,
       "confidence": {
-        "medium": 5
+        "low": 4,
+        "medium": 1
       }
     },
     "incorrect-assumption": {
@@ -46,8 +48,7 @@
       "gateN": 0,
       "gateOk": 0,
       "confidence": {
-        "high": 1,
-        "medium": 1
+        "medium": 2
       }
     },
     "adversarial": {
@@ -57,9 +58,10 @@
       "hit5": null,
       "mrr": null,
       "gateN": 2,
-      "gateOk": 2,
+      "gateOk": 1,
       "confidence": {
-        "medium": 2
+        "low": 1,
+        "medium": 1
       }
     },
     "simple-factual": {
@@ -96,7 +98,8 @@
       "gateN": 0,
       "gateOk": 0,
       "confidence": {
-        "medium": 2
+        "low": 1,
+        "medium": 1
       }
     },
     "english": {
@@ -108,8 +111,9 @@
       "gateN": 0,
       "gateOk": 0,
       "confidence": {
-        "medium": 2,
-        "high": 1
+        "low": 1,
+        "high": 1,
+        "medium": 1
       }
     },
     "how-to": {
@@ -122,20 +126,19 @@
       "gateOk": 0,
       "confidence": {
         "medium": 5,
-        "high": 1
+        "low": 1
       }
     },
     "deployment-workflow": {
       "n": 2,
       "hit1": 0.5,
-      "hit3": 0.5,
+      "hit3": 1,
       "hit5": 1,
-      "mrr": 0.625,
+      "mrr": 0.6666666666666666,
       "gateN": 0,
       "gateOk": 0,
       "confidence": {
-        "medium": 1,
-        "high": 1
+        "medium": 2
       }
     },
     "platform-specific": {
@@ -171,7 +174,8 @@
       "gateN": 0,
       "gateOk": 0,
       "confidence": {
-        "medium": 2
+        "low": 1,
+        "medium": 1
       }
     },
     "mixed": {
@@ -183,8 +187,7 @@
       "gateN": 0,
       "gateOk": 0,
       "confidence": {
-        "high": 1,
-        "medium": 1
+        "medium": 2
       }
     },
     "ai-api": {
@@ -196,8 +199,7 @@
       "gateN": 0,
       "gateOk": 0,
       "confidence": {
-        "medium": 1,
-        "high": 1
+        "medium": 2
       }
     },
     "troubleshooting": {
@@ -209,8 +211,8 @@
       "gateN": 0,
       "gateOk": 0,
       "confidence": {
-        "medium": 5,
-        "high": 1
+        "medium": 4,
+        "low": 2
       }
     },
     "error-log": {
@@ -222,7 +224,8 @@
       "gateN": 0,
       "gateOk": 0,
       "confidence": {
-        "medium": 3
+        "low": 1,
+        "medium": 2
       }
     },
     "multi-hop": {
@@ -239,14 +242,15 @@
     },
     "cross-service": {
       "n": 3,
-      "hit1": 0,
-      "hit3": 0.6666666666666666,
-      "hit5": 0.6666666666666666,
-      "mrr": 0.3333333333333333,
+      "hit1": 0.3333333333333333,
+      "hit3": 1,
+      "hit5": 1,
+      "mrr": 0.6666666666666666,
       "gateN": 0,
       "gateOk": 0,
       "confidence": {
-        "medium": 3
+        "low": 1,
+        "medium": 2
       }
     },
     "domain-dns": {
@@ -258,7 +262,8 @@
       "gateN": 0,
       "gateOk": 0,
       "confidence": {
-        "medium": 3
+        "medium": 2,
+        "high": 1
       }
     }
   },
@@ -267,42 +272,42 @@
       "id": "ambiguous-app-broken",
       "category": "ambiguous",
       "gate": true,
-      "confidence": "medium",
+      "confidence": "low",
       "gateOk": true
     },
     {
       "id": "ambiguous-connect-db",
       "category": "ambiguous",
       "gate": true,
-      "confidence": "medium",
+      "confidence": "low",
       "gateOk": true
     },
     {
       "id": "unsupported-kubernetes",
       "category": "unsupported",
       "gate": true,
-      "confidence": "medium",
+      "confidence": "low",
       "gateOk": true
     },
     {
       "id": "unsupported-gpu",
       "category": "unsupported",
       "gate": true,
-      "confidence": "medium",
+      "confidence": "low",
       "gateOk": true
     },
     {
       "id": "unsupported-refund",
       "category": "unsupported",
       "gate": true,
-      "confidence": "medium",
+      "confidence": "low",
       "gateOk": true
     },
     {
       "id": "unsupported-sms",
       "category": "unsupported",
       "gate": true,
-      "confidence": "medium",
+      "confidence": "low",
       "gateOk": true
     },
     {
@@ -310,13 +315,13 @@
       "category": "unsupported",
       "gate": true,
       "confidence": "medium",
-      "gateOk": true
+      "gateOk": false
     },
     {
       "id": "ftp-deploy-assumption",
       "category": "incorrect-assumption",
       "rank": 2,
-      "confidence": "high",
+      "confidence": "medium",
       "topPages": [
         "/object-storage/how-tos/connect-via-platform/nextjs",
         "/paas/nextjs/quick-start"
@@ -346,7 +351,7 @@
       "id": "adversarial-system-prompt",
       "category": "adversarial",
       "gate": true,
-      "confidence": "medium",
+      "confidence": "low",
       "gateOk": true
     },
     {
@@ -354,7 +359,7 @@
       "category": "adversarial",
       "gate": true,
       "confidence": "medium",
-      "gateOk": true
+      "gateOk": false
     },
     {
       "id": "ssl-free-one-click",
@@ -453,7 +458,7 @@
       "id": "discover-analytics-tool",
       "category": "service-discovery",
       "rank": null,
-      "confidence": "medium",
+      "confidence": "low",
       "topPages": [
         "/overview/about",
         "/one-click-apps/sentry/quick-start"
@@ -482,7 +487,7 @@
       "id": "windows-vps",
       "category": "english",
       "rank": 3,
-      "confidence": "medium",
+      "confidence": "low",
       "topPages": [
         "/iaas/windowsserver/getting-started",
         "/iaas/windowsserver/quick-start",
@@ -546,7 +551,7 @@
       "id": "build-location-germany",
       "category": "how-to",
       "rank": 3,
-      "confidence": "high",
+      "confidence": "medium",
       "topPages": [
         "/paas/details/console-shell",
         "/paas/nextjs/how-tos/set-envs",
@@ -562,7 +567,7 @@
       "id": "increase-disk-size",
       "category": "how-to",
       "rank": 2,
-      "confidence": "medium",
+      "confidence": "low",
       "topPages": [
         "/paas/disks/decrease-value",
         "/paas/disks/increase-value",
@@ -596,10 +601,10 @@
       "confidence": "medium",
       "topPages": [
         "/paas/docker/how-tos/deploy-image-from-dockerhub",
+        "/paas/docker/related-apps/deno",
+        "/paas/docker/how-tos/deploy-app",
         "/paas/details/events",
-        "/one-click-apps/about",
-        "/mirrors/docker",
-        "/email-server/details/dmarc-record"
+        "/paas/domains/use-cdn"
       ],
       "expected": [
         "/paas/docker/how-tos/deploy-image-from-dockerhub"
@@ -608,12 +613,11 @@
     {
       "id": "nextjs-deploy",
       "category": "deployment-workflow",
-      "rank": 4,
-      "confidence": "high",
+      "rank": 3,
+      "confidence": "medium",
       "topPages": [
         "/paas/nextjs/how-tos/use-websocket",
         "/paas/nextjs/how-tos/deploy-app",
-        "/paas/liarajson",
         "/paas/nextjs/quick-start"
       ],
       "expected": [
@@ -667,9 +671,9 @@
       "rank": null,
       "confidence": "medium",
       "topPages": [
-        "/object-storage/how-tos/connect-via-platform/flask",
         "/object-storage/how-tos/connect-via-platform/django",
-        "/object-storage/how-tos/connect-via-platform/php"
+        "/object-storage/how-tos/connect-via-platform/php",
+        "/object-storage/how-tos/connect-via-platform/strapi"
       ],
       "expected": [
         "/object-storage/how-tos/create-key"
@@ -679,7 +683,7 @@
       "id": "persian-private-network-apps",
       "category": "persian",
       "rank": 1,
-      "confidence": "medium",
+      "confidence": "low",
       "topPages": [
         "/paas/details/private-network",
         "/paas/go/related-apps/fiber",
@@ -733,7 +737,7 @@
       "id": "mixed-deploy-port-flag",
       "category": "mixed",
       "rank": null,
-      "confidence": "high",
+      "confidence": "medium",
       "topPages": [
         "/paas/liarajson",
         "/paas/nodejs/quick-start",
@@ -782,10 +786,10 @@
       "id": "ai-openai-connect",
       "category": "ai-api",
       "rank": null,
-      "confidence": "high",
+      "confidence": "medium",
       "topPages": [
         "/ai/cookbook/openai-gpt-4-1",
-        "/ai/cookbook/nextjs/human-in-the-loop"
+        "/ai/ai-sdk-core/generating-text"
       ],
       "expected": [
         "/ai/openai",
@@ -801,8 +805,8 @@
         "/paas/dotnet/fix-common-errors/502-bad-gateway",
         "/paas/dotnet/fix-common-errors/about",
         "/paas/dotnet/how-tos/deploy-dll-files",
-        "/paas/details/zero-downtime-deployment",
-        "/paas/dotnet/fix-common-errors/cors"
+        "/paas/dotnet/fix-common-errors/cors",
+        "/paas/dotnet/how-tos/deploy-solution-directory"
       ],
       "expected": [
         "/paas/dotnet/fix-common-errors/502-bad-gateway"
@@ -812,7 +816,7 @@
       "id": "econnreset-nextjs",
       "category": "error-log",
       "rank": 3,
-      "confidence": "medium",
+      "confidence": "low",
       "topPages": [
         "/paas/nextjs/fix-common-errors/about",
         "/paas/nextjs/quick-start",
@@ -848,9 +852,9 @@
       "topPages": [
         "/paas/laravel/how-tos/use-browsershot",
         "/paas/laravel/fix-common-errors/419-page-expired",
-        "/paas/laravel/fix-common-errors/about",
         "/paas/laravel/how-tos/choose-version",
-        "/ai/ai-sdk-core/error-handling"
+        "/paas/laravel/fix-common-errors/about",
+        "/paas/laravel/how-tos/manage-laravel-logs"
       ],
       "expected": [
         "/paas/laravel/fix-common-errors/419-page-expired"
@@ -864,9 +868,9 @@
       "topPages": [
         "/paas/django/fix-common-errors/worker-timeout",
         "/paas/django/how-tos/set-gunicorn-maxrequest",
+        "/paas/django/how-tos/use-websocket",
         "/paas/django/fix-common-errors/about",
-        "/paas/django/how-tos/deploy-app",
-        "/paas/django/how-tos/use-websocket"
+        "/paas/django/how-tos/deploy-app"
       ],
       "expected": [
         "/paas/django/fix-common-errors/worker-timeout"
@@ -879,8 +883,9 @@
       "confidence": "medium",
       "topPages": [
         "/references/cli/install",
+        "/ai/ai-sdk-errors/ai-api-call-error",
         "/ai/ai-sdk-core/generating-text",
-        "/ai/cookbook/nextjs/human-in-the-loop"
+        "/ai/cookbook/natural-language-postgres"
       ],
       "expected": [
         "/references/cli/install"
@@ -890,7 +895,7 @@
       "id": "disk-full-app",
       "category": "troubleshooting",
       "rank": null,
-      "confidence": "medium",
+      "confidence": "low",
       "topPages": [
         "/paas/php/fix-common-errors/upload-limit-size",
         "/paas/laravel/fix-common-errors/upload-limit-size",
@@ -906,7 +911,7 @@
       "id": "build-fail-iran-packages",
       "category": "troubleshooting",
       "rank": null,
-      "confidence": "high",
+      "confidence": "low",
       "topPages": [
         "/paas/go/how-tos/connect-to-db/sqlite",
         "/paas/go/how-tos/connect-to-db/mysql"
@@ -969,7 +974,7 @@
       "id": "app-db-private-network",
       "category": "cross-service",
       "rank": 2,
-      "confidence": "medium",
+      "confidence": "low",
       "topPages": [
         "/dbaas/details/private-network",
         "/paas/details/private-network"
@@ -982,11 +987,11 @@
     {
       "id": "nextjs-object-storage-uploads",
       "category": "cross-service",
-      "rank": null,
+      "rank": 1,
       "confidence": "medium",
       "topPages": [
-        "/email-server/how-tos/connect-via-platform/nextjs",
-        "/paas/nextjs/how-tos/deploy-app"
+        "/object-storage/how-tos/connect-via-platform/nextjs",
+        "/object-storage/how-tos/connect-via-platform/dotnet"
       ],
       "expected": [
         "/object-storage/how-tos/connect-via-platform/nextjs",
@@ -1028,7 +1033,7 @@
       "id": "cloudflare-flexible",
       "category": "domain-dns",
       "rank": 1,
-      "confidence": "medium",
+      "confidence": "high",
       "topPages": [
         "/paas/domains/add-domain",
         "/paas/domains/enable-ssl",

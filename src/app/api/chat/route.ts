@@ -3,7 +3,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'node:crypto';
 import type { ChatEvent } from '@/types';
 import { handleChatMessage } from '@/lib/agent/orchestrator';
-import { parseChatRequest, ValidationError } from '@/lib/security/validate';
+import {
+  parseChatRequest,
+  readJsonCapped,
+  clientIp,
+  ValidationError,
+  PayloadTooLargeError,
+} from '@/lib/security/validate';
 import { consume } from '@/lib/security/ratelimit';
 import { config } from '@/lib/config';
 import { log } from '@/lib/obs/log';
@@ -11,28 +17,15 @@ import { log } from '@/lib/obs/log';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
+const HEARTBEAT_MS = 15_000;
+
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = crypto.randomUUID();
-  const ip = (req.headers.get('x-forwarded-for') ?? 'local').split(',')[0].trim();
+  const ip = clientIp(req);
 
-  // request-size guard before reading the body
-  const len = Number(req.headers.get('content-length') ?? 0);
-  if (len > config().MAX_BODY_BYTES) {
-    return NextResponse.json(
-      { error: { code: 'invalid_input', message: 'request too large' } },
-      { status: 413 },
-    );
-  }
-
-  let body: { sessionId?: string; message: string };
-  try {
-    body = parseChatRequest(await req.json());
-  } catch (e) {
-    const msg = e instanceof ValidationError ? e.message : 'invalid JSON body';
-    return NextResponse.json({ error: { code: 'invalid_input', message: msg } }, { status: 400 });
-  }
-
-  const rl = consume(`${ip}|${body.sessionId ?? 'anon'}`);
+  // Rate limit BEFORE reading the body — the key is the client IP only.
+  // (A client-minted sessionId must never grant a fresh bucket.)
+  const rl = consume(ip);
   if (!rl.allowed) {
     return NextResponse.json(
       { error: { code: 'rate_limited', message: 'rate limit exceeded' } },
@@ -40,20 +33,44 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  log('info', 'chat_request', { requestId, ip, sessionId: body.sessionId, chars: body.message.length });
+  let body: { sessionId?: string; message: string };
+  try {
+    // byte cap enforced on the actual stream, not the advisory header
+    body = parseChatRequest(await readJsonCapped(req, config().MAX_BODY_BYTES));
+  } catch (e) {
+    if (e instanceof PayloadTooLargeError) {
+      return NextResponse.json(
+        { error: { code: 'invalid_input', message: 'request too large' } },
+        { status: 413 },
+      );
+    }
+    const msg = e instanceof ValidationError ? e.message : 'invalid JSON body';
+    return NextResponse.json({ error: { code: 'invalid_input', message: msg } }, { status: 400 });
+  }
+
+  log('info', 'chat_request', {
+    requestId,
+    ip,
+    // never log the raw session id — it is the only session credential
+    session: body.sessionId ? crypto.createHash('sha256').update(body.sessionId).digest('hex').slice(0, 8) : 'new',
+    chars: body.message.length,
+  });
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false;
-      const emit = (e: ChatEvent) => {
+      const write = (s: string) => {
         if (closed) return;
         try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(e)}\n\n`));
+          controller.enqueue(encoder.encode(s));
         } catch {
           closed = true; // client went away mid-stream
         }
       };
+      const emit = (e: ChatEvent) => write(`data: ${JSON.stringify(e)}\n\n`);
+      // SSE comment heartbeat so intermediaries do not cut long model waits
+      const heartbeat = setInterval(() => write(': keepalive\n\n'), HEARTBEAT_MS);
       try {
         await handleChatMessage({
           message: body.message,
@@ -67,6 +84,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         log('error', 'chat_unhandled', { requestId, message: (e as Error).message });
         emit({ type: 'error', code: 'internal', message: 'unexpected failure' });
       } finally {
+        clearInterval(heartbeat);
         closed = true;
         try {
           controller.close();
@@ -75,6 +93,10 @@ export async function POST(req: NextRequest): Promise<Response> {
         }
       }
     },
+    cancel() {
+      // reliable disconnect signal even if the platform does not wire req.signal
+      log('info', 'chat_stream_cancelled', { requestId });
+    },
   });
 
   return new Response(stream, {
@@ -82,6 +104,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache, no-transform',
       connection: 'keep-alive',
+      'x-accel-buffering': 'no',
       'x-request-id': requestId,
     },
   });

@@ -39,6 +39,61 @@ export function parseChatRequest(body: unknown): { sessionId?: string; message: 
   return parse(schema, body);
 }
 
+/**
+ * Read and JSON-parse a request body while ENFORCING the byte cap on the
+ * actual stream — the content-length header is advisory (chunked/HTTP2
+ * clients can omit or lie about it).
+ */
+export async function readJsonCapped(req: Request, maxBytes: number): Promise<unknown> {
+  const reader = req.body?.getReader();
+  if (!reader) throw new ValidationError('request body is required');
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) throw new PayloadTooLargeError(maxBytes);
+      parts.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  try {
+    const buf = new Uint8Array(total);
+    let off = 0;
+    for (const p of parts) {
+      buf.set(p, off);
+      off += p.byteLength;
+    }
+    return JSON.parse(new TextDecoder().decode(buf));
+  } catch {
+    throw new ValidationError('invalid JSON body');
+  }
+}
+
+export class PayloadTooLargeError extends Error {
+  constructor(maxBytes: number) {
+    super(`request exceeds ${maxBytes} bytes`);
+    this.name = 'PayloadTooLargeError';
+  }
+}
+
+/**
+ * Client IP for rate limiting. x-forwarded-for is only meaningful behind a
+ * trusted proxy (Liara's LB sets it); with TRUST_PROXY=off every direct
+ * client shares one bucket rather than letting a spoofed header mint
+ * unlimited fresh buckets.
+ */
+export function clientIp(req: Request): string {
+  if (config().TRUST_PROXY === 'on') {
+    const fwd = req.headers.get('x-forwarded-for');
+    if (fwd) return fwd.split(',')[0].trim().slice(0, 64);
+  }
+  return 'direct';
+}
+
 export function parseFeedback(body: unknown): {
   sessionId: string;
   messageId: string;

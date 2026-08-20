@@ -221,6 +221,51 @@ describe('orchestrator', () => {
     expect(err.message).toMatch(/دسترس/);
   });
 
+  it('emits a workflow checklist event when the plan builds one', async () => {
+    setProviderForTests(
+      scriptedProvider(
+        {
+          intent: 'workflow',
+          language: 'fa',
+          action: 'next_step',
+          statePatch: {
+            workflow: {
+              goal: 'استقرار Django + PostgreSQL',
+              detected: ['django', 'postgresql'],
+              steps: [
+                { id: 's1', label: 'ساخت دیتابیس', status: 'current' },
+                { id: 's2', label: 'تنظیم متغیرها', status: 'pending' },
+              ],
+            },
+          },
+          // query matches the fixture so the gate passes and the answer path
+          // (which emits workflow state) runs; the workflow patch itself is
+          // what we are asserting, independent of the query
+          retrievalQueries: ['تنظیم متغیرهای محیطی'],
+          filters: {},
+        },
+        'ابتدا دیتابیس را بسازید [1].',
+      ),
+    );
+    const events = await run('جنگو با پستگرس دارم، روی لیارا دیپلوی کنم');
+    const wf = events.find((e) => e.type === 'workflow') as Extract<ChatEvent, { type: 'workflow' }>;
+    expect(wf).toBeTruthy();
+    expect(wf.workflow.steps[0].status).toBe('current');
+  });
+
+  it('never adopts an unknown caller-supplied session id (no hijack)', async () => {
+    setProviderForTests(
+      scriptedProvider(
+        { intent: 'question', language: 'fa', action: 'answer', statePatch: {}, retrievalQueries: ['متغیر محیطی'], filters: {} },
+        'پاسخ [1].',
+      ),
+    );
+    const attacker = 'victim00-guessed-id';
+    const events = await run('سلام سوال دارم', attacker);
+    const sid = (events.find((e) => e.type === 'session') as Extract<ChatEvent, { type: 'session' }>).sessionId;
+    expect(sid).not.toBe(attacker); // server minted a fresh UUID instead
+  });
+
   it('remembers session context across turns', async () => {
     setProviderForTests(
       scriptedProvider(

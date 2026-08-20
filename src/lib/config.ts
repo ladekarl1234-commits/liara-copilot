@@ -19,6 +19,9 @@ const Env = z.object({
 
   // Security
   RATE_LIMIT_RPM: z.coerce.number().int().positive().default(20),
+  // 'on' when a trusted proxy (Liara LB) sets x-forwarded-for; 'off' for
+  // direct exposure, where the header is client-spoofable
+  TRUST_PROXY: z.enum(['on', 'off']).default('on'),
   MAX_INPUT_CHARS: z.coerce.number().int().positive().default(8_000),
   MAX_BODY_BYTES: z.coerce.number().int().positive().default(64_000),
 

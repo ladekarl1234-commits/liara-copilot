@@ -32,6 +32,7 @@ export default function Sources({ citations }: { citations: Citation[] }) {
           <li key={`${c.url}-${i}`}>
             <a href={c.url} target="_blank" rel="noopener noreferrer nofollow">
               <ExternalIcon />
+              {c.n != null && <span className="source-n">[{c.n}]</span>}
               <bdi dir="ltr">
                 Liara Docs · {c.product} · {c.title}
                 {c.heading ? ` · ${c.heading}` : ''}

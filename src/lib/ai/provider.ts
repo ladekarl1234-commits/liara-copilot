@@ -16,6 +16,14 @@ export class ModelError extends Error {
   }
 }
 
+/** The CLIENT went away — never an error metric, never a user-facing message. */
+export class ClientAbortError extends Error {
+  constructor() {
+    super('client aborted the request');
+    this.name = 'ClientAbortError';
+  }
+}
+
 const RETRYABLE = new Set([429, 500, 502, 503, 504]);
 
 export class OpenAICompatibleProvider implements ModelProvider {
@@ -49,6 +57,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
         });
         if (res.ok) return res;
         if (RETRYABLE.has(res.status) && attempt < cfg.MODEL_MAX_RETRIES) {
+          await res.text().catch(() => {}); // drain body — return connection to the pool
           await sleep(250 * 4 ** attempt);
           continue;
         }
@@ -58,8 +67,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
       } catch (e) {
         if (e instanceof ModelError) throw e;
         lastErr = e;
+        // caller abort (client disconnect) is NOT a provider timeout — classify first
+        if (signal?.aborted) throw new ClientAbortError();
         const isTimeout = e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError');
-        if (isTimeout && signal?.aborted) throw new ModelError('model_timeout', 'request aborted');
         if (attempt < cfg.MODEL_MAX_RETRIES) {
           await sleep(250 * 4 ** attempt);
           continue;
@@ -98,24 +108,30 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const res = await this.post('/chat/completions', body, opts.signal);
     if (!res.body) throw new ModelError('model_unavailable', 'no response body');
     const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop() ?? '';
-      for (const line of lines) {
-        const m = line.match(/^data:\s*(.*)$/);
-        if (!m || m[1] === '[DONE]') continue;
-        try {
-          const delta = JSON.parse(m[1]).choices?.[0]?.delta?.content;
-          if (delta) yield delta;
-        } catch {
-          // partial/keepalive line — ignore
+    try {
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const line of lines) {
+          const m = line.match(/^data:\s*(.*)$/);
+          if (!m || m[1].trim() === '[DONE]') continue;
+          try {
+            const delta = JSON.parse(m[1]).choices?.[0]?.delta?.content;
+            if (delta) yield delta;
+          } catch {
+            // partial/keepalive line — ignore
+          }
         }
       }
+    } finally {
+      // runs on normal end, consumer throw, and generator .return() — the
+      // socket must never be left holding a live provider stream
+      await reader.cancel().catch(() => {});
     }
   }
 

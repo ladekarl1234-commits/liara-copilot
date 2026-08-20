@@ -5,10 +5,13 @@ import type { RequestMetrics } from '@/types';
 
 type Level = 'info' | 'warn' | 'error';
 
-const SECRET_KEYS = new Set(['apikey', 'authorization', 'token']);
+const SECRET_KEYS = new Set([
+  'apikey', 'api_key', 'ai_api_key', 'authorization', 'token', 'secret',
+  'password', 'credential', 'cookie', 'set-cookie',
+]);
 
 function replacer(key: string, value: unknown): unknown {
-  return SECRET_KEYS.has(key.toLowerCase()) ? undefined : value;
+  return SECRET_KEYS.has(key.toLowerCase().replace(/-/g, '_')) ? undefined : value;
 }
 
 export function log(level: Level, event: string, fields?: Record<string, unknown>): void {

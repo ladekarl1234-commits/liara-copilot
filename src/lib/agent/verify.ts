@@ -25,10 +25,12 @@ export async function verifyAnswer(
   answer: string,
   evidence: ScoredChunk[],
   provider: ModelProvider | null,
+  signal?: AbortSignal,
 ): Promise<VerifyResult> {
   const cfg = config();
   const skip: VerifyResult = { checked: false, unsupportedCount: 0, usage: { inputTokens: 0, outputTokens: 0 } };
   if (cfg.VERIFY_CLAIMS !== 'on' || !provider || answer.length < 200 || !evidence.length) return skip;
+  if (signal?.aborted) return skip; // client already gone — don't spend a call
 
   try {
     const res = await provider.generate({
@@ -43,6 +45,7 @@ export async function verifyAnswer(
       maxTokens: 400,
       temperature: 0,
       jsonSchema: {},
+      signal,
     });
     const parsed = VerifySchema.safeParse(extractJson(res.text));
     if (!parsed.success) return { ...skip, usage: res.usage };

@@ -40,6 +40,7 @@ export interface RetrievalResult {
 }
 
 export interface Citation {
+  n?: number; // the [n] marker used in the answer text, when the model cited by number
   title: string;
   url: string; // deep link incl. #anchor when available
   product: string;

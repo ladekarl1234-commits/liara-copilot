@@ -144,7 +144,9 @@ export function preClassify(message: string): DeterministicSignals {
 }
 
 export function fallbackPlan(message: string, s: DeterministicSignals, state: SessionState): AgentPlan {
-  const platform = s.platform ?? state.context.platform;
+  // inherit session platform only when this message has no topic of its own
+  const ownTopic = s.database ?? (s.product && s.product !== 'paas' ? s.product : undefined);
+  const platform = s.platform ?? (ownTopic ? undefined : state.context.platform);
   return {
     intent: s.isGreeting ? 'chitchat' : s.hasError ? 'troubleshooting' : 'question',
     language: s.language,
@@ -171,6 +173,7 @@ export async function makePlan(
   message: string,
   state: SessionState,
   provider: ModelProvider | null,
+  signal?: AbortSignal,
 ): Promise<{ plan: AgentPlan; usage: Usage; route: string }> {
   const signals = preClassify(message);
   const fallback = fallbackPlan(message, signals, state);
@@ -186,18 +189,26 @@ export async function makePlan(
       ],
       maxTokens: 700,
       temperature: 0,
-      jsonSchema: {}, // signal json mode
+      jsonSchema: {}, // request json mode
+      signal,
     });
     const parsed = PlanSchema.safeParse(extractJson(res.text));
     if (!parsed.success) return { plan: fallback, usage: res.usage, route: 'fallback-after-parse-error' };
     const plan = parsed.data as AgentPlan;
-    // deterministic signals win when the model missed them
-    if (!plan.filters.platform && (signals.platform ?? state.context.platform)) {
-      plan.filters.platform = signals.platform ?? state.context.platform;
+    // deterministic signals win when the model missed them. Inherit the
+    // session's platform ONLY when this message carries no product/database
+    // signal of its own — otherwise a turn-1 "django" sticks to a turn-2
+    // postgres-pricing question and filters out the right docs forever.
+    if (!plan.filters.platform) {
+      const ownTopic = signals.database ?? (signals.product && signals.product !== 'paas' ? signals.product : undefined);
+      const inherited = ownTopic || plan.filters.product ? undefined : state.context.platform;
+      const p = signals.platform ?? inherited;
+      if (p) plan.filters.platform = p;
     }
     if (!plan.retrievalQueries.length && plan.action === 'answer') plan.retrievalQueries = [message.slice(0, 200)];
     return { plan, usage: res.usage, route: route.model };
-  } catch {
+  } catch (e) {
+    if ((e as Error).name === 'ClientAbortError') throw e; // don't answer a gone client
     return { plan: fallback, usage: zero(), route: 'fallback-after-model-error' };
   }
 }
