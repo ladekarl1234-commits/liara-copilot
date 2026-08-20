@@ -1,0 +1,37 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+
+      # The docs index is a required test artifact (the real-index integration
+      # tests hard-fail under CI when it is absent — by design). Build it before
+      # `npm test`.
+      - name: Build docs index
+        run: npm run index
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit + integration tests
+        run: npm test
+
+      # Retrieval regression floors: fails the run if hit@5 or gate-accuracy
+      # drops below the committed floors (scripts/evaluate.ts).
+      - name: Retrieval eval (regression floors)
+        run: npm run evaluate:retrieval
+
+      - name: Production build
+        run: npm run build

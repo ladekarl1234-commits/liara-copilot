@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parseLlmsFile, chunkMarkdown, splitLong, sha16, loadAnchors } from '@/lib/docs/ingest';
+import { parseLlmsFile, chunkMarkdown, splitLong, sha16, loadAnchors, boundarySlice } from '@/lib/docs/ingest';
 import { normalizeFa } from '@/lib/text/persian';
 
 describe('parseLlmsFile', () => {
@@ -168,5 +168,30 @@ describe('loadAnchors', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  describe('boundarySlice', () => {
+    it('leaves a piece under the cap untouched', () => {
+      expect(boundarySlice('short text')).toEqual(['short text']);
+    });
+    it('bounds every slice to <= 2200 chars', () => {
+      const piece = Array.from({ length: 400 }, (_, i) => `line ${i} some words here`).join('\n');
+      const slices = boundarySlice(piece);
+      expect(slices.length).toBeGreaterThan(1);
+      for (const s of slices) expect(s.length).toBeLessThanOrEqual(2200);
+    });
+    it('cuts at a whitespace boundary, not mid-word, when one exists', () => {
+      const piece = ('word '.repeat(600)).trim(); // 3000 chars, spaces throughout
+      for (const s of boundarySlice(piece)) {
+        // no slice ends in a partial "wor" fragment
+        expect(/\bword$|word$/.test(s) || s.endsWith('word')).toBe(true);
+      }
+    });
+    it('falls back to a hard cut for an unbreakable token', () => {
+      const piece = 'x'.repeat(5000); // no boundary anywhere
+      const slices = boundarySlice(piece);
+      for (const s of slices) expect(s.length).toBeLessThanOrEqual(2200);
+      expect(slices.join('')).toBe(piece);
+    });
   });
 });

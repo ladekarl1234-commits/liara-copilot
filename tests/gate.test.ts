@@ -76,6 +76,12 @@ describe('gateConfidence', () => {
     expect(gateConfidence(8, { ratio: 0, informative: 0, matched: 0 }, 30, 1.02, 0)).toBe('low');
     expect(gateConfidence(8, { ratio: 0, informative: 0, matched: 0 }, 30, 1.02, 2)).toBe('medium');
   });
+  it('gibberish (informative tokens present, NONE matched) stays low at EVERY depth', () => {
+    // regression lock: the follow-up relaxation must fire ONLY for pure
+    // stopwords (informative === 0), never for off-vocabulary gibberish
+    expect(gateConfidence(8, { ratio: 0, informative: 3, matched: 0 }, 30, 1.02, 0)).toBe('low');
+    expect(gateConfidence(8, { ratio: 0, informative: 3, matched: 0 }, 30, 1.02, 5)).toBe('low');
+  });
 });
 
 describe('expandQueries', () => {

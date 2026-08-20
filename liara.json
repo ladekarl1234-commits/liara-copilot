@@ -2,6 +2,9 @@
   "platform": "docker",
   "app": "liara-copilot",
   "port": 3000,
+  "env": {
+    "TRUST_PROXY": "on"
+  },
   "build": {
     "dockerfile": "Dockerfile"
   },

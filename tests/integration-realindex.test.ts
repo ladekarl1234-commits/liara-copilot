@@ -55,6 +55,14 @@ d('real index: evidence gate', () => {
     });
   }
 
+  it('keeps gibberish low even mid-conversation (priorTurns > 0)', async () => {
+    const idx = loadIndex(INDEX_DIR);
+    for (const q of ['asdkjhasd qwe zzz', 'zzz qqq www']) {
+      const r = await search([q], {}, { priorTurns: 4 }, idx);
+      expect(r.confidence, `"${q}" at depth must stay low`).toBe('low');
+    }
+  });
+
   it('does NOT gate legit one-concept or full questions low', async () => {
     const idx = loadIndex(INDEX_DIR);
     for (const q of ['چطور دامنه وصل کنم', 'دامنه', 'تنظیم متغیرهای محیطی', 'استقرار برنامه Next.js']) {

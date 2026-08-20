@@ -52,7 +52,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     requestId,
     ip,
     // never log the raw session id — it is the only session credential
-    session: body.sessionId ? crypto.createHash('sha256').update(body.sessionId).digest('hex').slice(0, 8) : 'new',
+    // 12-char prefix matches the hash length in request_metrics so the two log
+    // lines can be equality-joined by session
+    session: body.sessionId ? crypto.createHash('sha256').update(body.sessionId).digest('hex').slice(0, 12) : 'new',
     chars: body.message.length,
   });
 

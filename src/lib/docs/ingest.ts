@@ -205,25 +205,35 @@ export function splitLong(text: string): string[] {
       acc = '';
     }
     acc += b + '\n';
-    // hard cap safety
-    if (acc.length > MAX_CHUNK_CHARS * 1.5) {
+    // hard cap safety (same bound as the final slice, so the two agree)
+    if (acc.length > MAX_CHUNK_CHARS) {
       out.push(acc.trim());
       acc = '';
     }
   }
   if (acc.trim()) out.push(acc.trim());
-  // absolute enforcement: every returned piece is <= MAX_CHUNK_CHARS. A single
-  // blank-line-free block (huge table, minified content) is hard-sliced as a
-  // last resort. No 1.5x slack — the cap is the cap.
-  return out
-    .filter(Boolean)
-    .flatMap((piece) =>
-      piece.length <= MAX_CHUNK_CHARS
-        ? [piece]
-        : Array.from({ length: Math.ceil(piece.length / MAX_CHUNK_CHARS) }, (_, i) =>
-            piece.slice(i * MAX_CHUNK_CHARS, (i + 1) * MAX_CHUNK_CHARS),
-          ),
-    );
+  // absolute enforcement: the chunk BODY is <= MAX_CHUNK_CHARS. A single
+  // blank-line-free block (huge table, minified content) is sliced as a last
+  // resort — at a line/word boundary, never mid-word or mid-token. (The stored
+  // chunk later gains a "## heading\n\n" prefix, so the final text can exceed
+  // this by the heading length; the body itself is bounded here.)
+  return out.filter(Boolean).flatMap(boundarySlice);
+}
+
+/** Split an over-cap piece at the last newline (then space) before the cap. */
+export function boundarySlice(piece: string): string[] {
+  if (piece.length <= MAX_CHUNK_CHARS) return [piece];
+  const out: string[] = [];
+  let rest = piece;
+  while (rest.length > MAX_CHUNK_CHARS) {
+    let cut = rest.lastIndexOf('\n', MAX_CHUNK_CHARS);
+    if (cut < MAX_CHUNK_CHARS * 0.7) cut = rest.lastIndexOf(' ', MAX_CHUNK_CHARS);
+    if (cut < MAX_CHUNK_CHARS * 0.7) cut = MAX_CHUNK_CHARS; // no boundary: hard cut
+    out.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trim();
+  }
+  if (rest) out.push(rest);
+  return out.filter(Boolean);
 }
 
 function classify(text: string): DocChunk['contentType'] {

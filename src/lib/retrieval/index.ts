@@ -266,7 +266,12 @@ export function gateConfidence(
   priorTurns = 0,
 ): RetrievalResult['confidence'] {
   if (!resultCount) return 'low';
-  if (coverage.matched === 0) return priorTurns > 0 ? 'medium' : 'low';
+  // Nothing matched. Relax to 'medium' ONLY for a pure-stopword follow-up
+  // ("قدم بعدی چیست؟") where the raw message carries no informative token but
+  // the conversation does. Gibberish with informative tokens that simply don't
+  // appear in the corpus ("asdkjhasd qwe") stays 'low' at EVERY depth —
+  // otherwise turn 1 onward would answer it.
+  if (coverage.matched === 0) return coverage.informative === 0 && priorTurns > 0 ? 'medium' : 'low';
   if (coverage.ratio < 0.34) return 'low';
   if (coverage.ratio >= 0.7 && coverage.informative >= 2 && scorePerToken >= 25 && margin >= 1.05) return 'high';
   return 'medium';
