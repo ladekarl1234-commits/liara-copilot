@@ -9,11 +9,15 @@ import {
   type ReactNode,
 } from 'react';
 import { useChat, type UIMessage } from './useChat';
+import { useVoice, type VoiceState } from './useVoice';
+import { useTts } from './useTts';
 import Markdown from './Markdown';
 import Sources from './Sources';
 import WorkflowChecklist from './WorkflowChecklist';
 import HypothesisList from './HypothesisList';
 import Feedback from './Feedback';
+
+const hasPersian = (t: string) => /[؀-ۿ]/.test(t);
 
 const CHIPS: { label: string; message: string }[] = [
   {
@@ -34,7 +38,7 @@ const CHIPS: { label: string; message: string }[] = [
   },
 ];
 
-function SendIcon() {
+function Icon({ children }: { children: ReactNode }) {
   return (
     <svg
       width="16"
@@ -47,11 +51,47 @@ function SendIcon() {
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <path d="M12 19V5" />
-      <path d="m5 12 7-7 7 7" />
+      {children}
     </svg>
   );
 }
+
+const SendIcon = () => (
+  <Icon>
+    <path d="M12 19V5" />
+    <path d="m5 12 7-7 7 7" />
+  </Icon>
+);
+
+const MicIcon = () => (
+  <Icon>
+    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+    <path d="M12 19v3" />
+  </Icon>
+);
+
+const StopIcon = () => (
+  <Icon>
+    <rect x="6" y="6" width="12" height="12" rx="2" />
+  </Icon>
+);
+
+const SpeakerIcon = () => (
+  <Icon>
+    <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+    <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+  </Icon>
+);
+
+const VOICE_LABEL: Record<VoiceState, string> = {
+  idle: 'گفتن با صدا',
+  unsupported: 'ضبط صدا در این مرورگر پشتیبانی نمی‌شود',
+  requesting: 'در حال گرفتن اجازه‌ی میکروفون…',
+  listening: 'در حال شنیدن — برای پایان، دوباره بزنید',
+  processing: 'در حال تبدیل گفتار به متن…',
+  error: 'خطای صدا — دوباره تلاش کنید',
+};
 
 function Composer({
   onSend,
@@ -65,16 +105,32 @@ function Composer({
   const [value, setValue] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    if (!disabled) ref.current?.focus();
-  }, [disabled]);
-
   const grow = () => {
     const el = ref.current;
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`; // CSS max-height caps at ~6 rows
   };
+
+  // Voice: transcript is APPENDED to whatever the user already typed, so a mic
+  // failure can never discard typed text (AC-VOICE-002).
+  const voice = useVoice(
+    useCallback((text: string) => {
+      setValue((v) => (v ? v.trimEnd() + ' ' : '') + text);
+    }, []),
+  );
+
+  useEffect(() => {
+    if (!disabled) ref.current?.focus();
+  }, [disabled]);
+
+  useEffect(() => {
+    grow();
+    if (value) ref.current?.focus();
+  }, [value]);
+
+  const recording = voice.state === 'listening' || voice.state === 'requesting';
+  const micBusy = voice.state === 'processing';
 
   const submit = () => {
     const t = value.trim();
@@ -93,31 +149,55 @@ function Composer({
   };
 
   return (
-    <div className={`composer ${large ? 'composer-lg' : ''}`}>
-      <textarea
-        ref={ref}
-        rows={1}
-        value={value}
-        autoFocus
-        disabled={disabled}
-        placeholder="سوال خود را درباره‌ی لیارا بنویسید…"
-        aria-label="پیام شما"
-        dir="auto"
-        onChange={(e) => {
-          setValue(e.target.value);
-          grow();
-        }}
-        onKeyDown={onKeyDown}
-      />
-      <button
-        type="button"
-        className="send-btn"
-        aria-label="ارسال پیام"
-        disabled={disabled || value.trim() === ''}
-        onClick={submit}
-      >
-        <SendIcon />
-      </button>
+    <div>
+      <div className={`composer ${large ? 'composer-lg' : ''}`}>
+        <textarea
+          ref={ref}
+          rows={1}
+          value={value}
+          autoFocus
+          disabled={disabled}
+          placeholder="سوال خود را درباره‌ی لیارا بنویسید…"
+          aria-label="پیام شما"
+          dir="auto"
+          onChange={(e) => {
+            setValue(e.target.value);
+            grow();
+          }}
+          onKeyDown={onKeyDown}
+        />
+        {voice.supported && (
+          <button
+            type="button"
+            className={`mic-btn${recording ? ' mic-recording' : ''}`}
+            aria-label={VOICE_LABEL[voice.state]}
+            aria-pressed={recording}
+            title={VOICE_LABEL[voice.state]}
+            disabled={disabled || micBusy}
+            onClick={() => (recording ? voice.stop() : void voice.start())}
+          >
+            {recording ? <StopIcon /> : <MicIcon />}
+          </button>
+        )}
+        <button
+          type="button"
+          className="send-btn"
+          aria-label="ارسال پیام"
+          disabled={disabled || value.trim() === ''}
+          onClick={submit}
+        >
+          <SendIcon />
+        </button>
+      </div>
+      {(recording || micBusy || voice.error) && (
+        <p
+          className={`voice-status${voice.error ? ' voice-status-error' : ''}`}
+          role="status"
+          aria-live="polite"
+        >
+          {voice.error ? voice.error.message : VOICE_LABEL[voice.state]}
+        </p>
+      )}
     </div>
   );
 }
@@ -140,6 +220,7 @@ function AssistantMessage({
   onRetry,
   sessionId,
   onStillBroken,
+  tts,
 }: {
   m: UIMessage;
   stage: string | null;
@@ -147,7 +228,9 @@ function AssistantMessage({
   onRetry: () => void;
   sessionId: string | null;
   onStillBroken: () => void;
+  tts: ReturnType<typeof useTts>;
 }) {
+  const answered = m.done && !m.error && m.text !== '';
   return (
     <div className="min-w-0">
       {m.workflow && <WorkflowChecklist workflow={m.workflow} />}
@@ -166,8 +249,21 @@ function AssistantMessage({
       )}
       {m.citations && m.citations.length > 0 && <Sources citations={m.citations} />}
       {m.error && <ErrorBlock message={m.error.message} onRetry={onRetry} />}
-      {m.done && !m.error && m.text !== '' && (
-        <Feedback sessionId={sessionId} messageId={m.id} onStillBroken={onStillBroken} />
+      {answered && (
+        <div className="msg-actions">
+          {tts.supported && (
+            <button
+              type="button"
+              className={`listen-btn${tts.speakingId === m.id ? ' listen-active' : ''}`}
+              aria-pressed={tts.speakingId === m.id}
+              onClick={() => tts.toggle(m.id, m.text, hasPersian(m.text) ? 'fa' : 'en')}
+            >
+              <SpeakerIcon />
+              {tts.speakingId === m.id ? 'توقف' : 'شنیدن'}
+            </button>
+          )}
+          <Feedback sessionId={sessionId} messageId={m.id} onStillBroken={onStillBroken} />
+        </div>
       )}
     </div>
   );
@@ -175,6 +271,7 @@ function AssistantMessage({
 
 export default function Chat() {
   const { messages, send, retry, status, stage, contextChips, sessionId } = useChat();
+  const tts = useTts();
   const scrollRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
   const streaming = status === 'streaming';
@@ -261,6 +358,7 @@ export default function Chat() {
                 onRetry={retry}
                 sessionId={sessionId}
                 onStillBroken={onStillBroken}
+                tts={tts}
               />
             );
           })}

@@ -12,6 +12,7 @@ export interface PipelineTrace {
     latencyMs: number;
   };
   modelRoute?: string;
+  actualModel?: string; // provider-reported model that served (openrouter/free routes dynamically)
   usage?: { inputTokens: number; outputTokens: number };
   totalLatencyMs?: number;
   error?: string;

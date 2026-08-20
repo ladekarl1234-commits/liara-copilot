@@ -4,6 +4,7 @@
 
 import crypto from 'node:crypto';
 import type { AgentPlan, SessionState } from '@/types';
+import { redactSecrets } from '@/lib/security/redact';
 
 const MAX_SESSIONS = 5000;
 const TTL_MS = 24 * 60 * 60 * 1000;
@@ -102,8 +103,11 @@ export function applyPatch(
 /** Rolling compact summary instead of full history in every model call. */
 export function pushTurn(s: SessionState, userMsg: string, assistantGist: string): void {
   s.turns += 1;
-  const u = userMsg.replace(/\s+/g, ' ').slice(0, 200);
-  const a = assistantGist.replace(/\s+/g, ' ').slice(0, 200);
+  // The summary is embedded in the plan/answer system prompt on EVERY later
+  // turn (prompts.stateBlock), so it is a model-bound sink: redact pasted
+  // secrets here or a turn-1 paste leaks to the model on turn 2 (AC-SEC-002).
+  const u = redactSecrets(userMsg).replace(/\s+/g, ' ').slice(0, 200);
+  const a = redactSecrets(assistantGist).replace(/\s+/g, ' ').slice(0, 200);
   s.summary = `${s.summary}\nU:${u}\nA:${a}`.slice(-MAX_SUMMARY_CHARS).trimStart();
   save(s);
 }

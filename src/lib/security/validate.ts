@@ -75,6 +75,36 @@ export async function readJsonCapped(req: Request, maxBytes: number): Promise<un
   }
 }
 
+/**
+ * Read a request body into bytes while ENFORCING the cap on the actual stream
+ * (the content-length header is advisory). Use before parsing a multipart
+ * upload so a huge/chunked body cannot be buffered into memory first.
+ */
+export async function readBytesCapped(req: Request, maxBytes: number): Promise<Uint8Array> {
+  const reader = req.body?.getReader();
+  if (!reader) throw new ValidationError('request body is required');
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) throw new PayloadTooLargeError(maxBytes);
+      parts.push(value);
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  const buf = new Uint8Array(total);
+  let off = 0;
+  for (const p of parts) {
+    buf.set(p, off);
+    off += p.byteLength;
+  }
+  return buf;
+}
+
 export class PayloadTooLargeError extends Error {
   constructor(maxBytes: number) {
     super(`request exceeds ${maxBytes} bytes`);

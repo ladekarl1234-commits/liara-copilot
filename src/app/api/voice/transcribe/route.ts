@@ -1,0 +1,91 @@
+// POST /api/voice/transcribe — multipart form with an `audio` file.
+// Returns { text, language } from the server-side STT provider (Soniox).
+// The provider key stays server-side; the browser only sends recorded bytes.
+import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'node:crypto';
+import { clientIp, readBytesCapped, PayloadTooLargeError } from '@/lib/security/validate';
+import { consume } from '@/lib/security/ratelimit';
+import { getSttProvider, isSttError } from '@/lib/speech';
+import { config } from '@/lib/config';
+import { log } from '@/lib/obs/log';
+
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
+
+const TRANSCRIBE_TIMEOUT_MS = 40_000;
+
+function err(code: string, message: string, status: number) {
+  return NextResponse.json({ error: { code, message } }, { status });
+}
+
+export async function POST(req: NextRequest): Promise<Response> {
+  const requestId = crypto.randomUUID();
+  const cfg = config();
+  const ip = clientIp(req);
+
+  const rl = consume(ip);
+  if (!rl.allowed) return err('rate_limited', 'rate limit exceeded', 429);
+
+  const stt = getSttProvider();
+  if (!stt) return err('voice_unavailable', 'voice input is not configured on the server', 503);
+
+  // Cap the raw body ON THE STREAM before formData() buffers it — an unbounded
+  // multipart upload must not be parsed into memory first. Small multipart
+  // overhead margin over the audio cap.
+  let raw: Uint8Array;
+  try {
+    raw = await readBytesCapped(req, cfg.VOICE_MAX_BYTES + 8_192);
+  } catch (e) {
+    if (e instanceof PayloadTooLargeError) return err('invalid_input', 'audio too large', 413);
+    return err('invalid_input', 'could not read request body', 400);
+  }
+
+  let file: File | null = null;
+  try {
+    const parsed = new Request('http://local/voice', {
+      method: 'POST',
+      headers: { 'content-type': req.headers.get('content-type') ?? '' },
+      body: new Blob([raw as BlobPart]),
+    });
+    const form = await parsed.formData();
+    const f = form.get('audio');
+    if (f instanceof File) file = f;
+  } catch {
+    return err('invalid_input', 'expected multipart/form-data with an audio field', 400);
+  }
+  if (!file) return err('invalid_input', 'missing audio file', 400);
+  if (file.size === 0) return err('invalid_input', 'empty recording', 400);
+  if (file.size > cfg.VOICE_MAX_BYTES) return err('invalid_input', 'audio too large', 413);
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const t0 = Date.now();
+  try {
+    // hard timeout so a hung Soniox upload/poll cannot hold the connection to maxDuration
+    const result = await stt.transcribe(bytes, { mimeType: file.type, signal: AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS) });
+    log('info', 'voice_transcribed', {
+      requestId,
+      ipHash: crypto.createHash('sha256').update(ip).digest('hex').slice(0, 12),
+      bytes: file.size,
+      ms: Date.now() - t0,
+      language: result.language,
+      // never log the transcript itself (it is user speech content)
+      chars: result.text.length,
+    });
+    return NextResponse.json({ text: result.text, language: result.language });
+  } catch (e) {
+    if (isSttError(e)) {
+      log('warn', 'voice_failed', { requestId, code: e.code });
+      if (e.code === 'stt_empty') return err('invalid_input', 'no speech detected', 422);
+      if (e.code === 'stt_timeout') return err('voice_unavailable', 'transcription timed out', 504);
+      return err('voice_unavailable', 'transcription failed', 502);
+    }
+    // AbortSignal.timeout firing surfaces as a DOMException (not an SttError)
+    const name = (e as { name?: string })?.name;
+    if (name === 'TimeoutError' || name === 'AbortError') {
+      log('warn', 'voice_timeout', { requestId });
+      return err('voice_unavailable', 'transcription timed out', 504);
+    }
+    log('error', 'voice_error', { requestId, message: (e as Error).message });
+    return err('internal', 'transcription error', 500);
+  }
+}

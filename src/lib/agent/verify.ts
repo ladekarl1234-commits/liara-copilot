@@ -34,7 +34,7 @@ export async function verifyAnswer(
 
   try {
     const res = await provider.generate({
-      model: cfg.AI_MODEL_FAST,
+      model: cfg.fastModel,
       messages: [
         { role: 'system', content: verifySystemPrompt() },
         {

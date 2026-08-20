@@ -111,3 +111,21 @@ Liara-specific claims before the user acts on them (`docs/DECISIONS.md` D7:
 and blocks the worst case — weak evidence — before any answer call happens
 at all, so the paid verify call only ever runs on an answer that already had
 adequate evidence).
+
+## Amendment additions — OpenRouter free routing & voice
+
+- **Generation** defaults to the **OpenRouter Free Router** (`openrouter/free`),
+  so per-answer LLM cost is $0 on the free tier. Because the router is dynamic,
+  the actual model per call is recorded (request metrics + `/internal`), never
+  assumed — we do not claim a fixed model or fabricated reproducibility.
+- **Zero-call paths** (unchanged): greeting, FAQ cache hit, keyless degraded
+  mode, and injection refusal make **no** model call. Deterministic work
+  (hashing, RRF fusion, schema validation, normalization) never calls the LLM.
+- **Embeddings** are **off by default** (lexical-only), so indexing and query
+  embedding cost is $0 unless `AI_EMBEDDINGS_MODEL` is set (ADR 0004).
+- **Voice** STT cost is per-Soniox-request and only incurred when the user
+  actually speaks; TTS uses the browser (zero cost). Load tests use the mock LLM
+  so infrastructure benchmarking spends **no** OpenRouter/Soniox quota.
+- **Free-provider caveat:** free routes may have their own rate/retention limits;
+  secret redaction (see SECURITY.md) reduces what diagnostic content is ever sent
+  to an external model.

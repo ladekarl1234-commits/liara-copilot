@@ -147,3 +147,28 @@ recommended default.
   container-level health checks can't currently detect a missing index on
   their own — noted above as a concrete gap for whoever wires up real
   orchestration.
+
+## Amendment additions — environment (voice + OpenRouter)
+
+Add to the Liara app environment (server-side; never in the client bundle):
+
+```env
+# LLM — OpenRouter Free Router (default)
+OPENROUTER_API_KEY=...          # required for generation; server-side only
+OPENROUTER_MODEL=openrouter/free
+# or a generic OpenAI-compatible provider (overrides OpenRouter):
+# AI_BASE_URL=... / AI_API_KEY=...
+
+# Voice — Soniox STT (optional; app runs as text-only without it)
+SONIOX_API_KEY=...              # server-side only
+
+# Diagnostics off in production unless explicitly enabled
+DIAG_ENABLED=off
+```
+
+- Health `/api/health` returns **503** until the index loads; wire it as the
+  container health check.
+- Load testing uses a mock LLM (`LLM_MOCK=on`) and must never point at real
+  OpenRouter — keep quality eval separate and bounded.
+- The index (`data/index/`) is built out of band (`npm run index`) and shipped in
+  the image or a volume; each app instance loads its own read-only copy.

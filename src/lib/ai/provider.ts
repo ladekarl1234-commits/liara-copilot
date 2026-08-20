@@ -5,6 +5,7 @@
 import type { ChatMessage, GenerateOptions, GenerateResult, ModelProvider, Usage } from '@/types';
 import type { ErrorCode } from '@/types';
 import { config } from '@/lib/config';
+import { MockLLMProvider } from './mock-provider';
 
 export class ModelError extends Error {
   constructor(
@@ -32,15 +33,21 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   constructor(baseUrl?: string, apiKey?: string) {
     const cfg = config();
-    this.baseUrl = (baseUrl ?? cfg.AI_BASE_URL ?? '').replace(/\/$/, '');
-    this.apiKey = apiKey ?? cfg.AI_API_KEY ?? '';
+    this.baseUrl = (baseUrl ?? cfg.aiBaseUrl ?? '').replace(/\/$/, '');
+    this.apiKey = apiKey ?? cfg.aiApiKey ?? '';
     if (!this.baseUrl || !this.apiKey) {
-      throw new ModelError('model_unavailable', 'AI provider not configured — set AI_BASE_URL and AI_API_KEY');
+      throw new ModelError('model_unavailable', 'AI provider not configured — set OPENROUTER_API_KEY (or AI_BASE_URL + AI_API_KEY)');
     }
   }
 
   private headers() {
-    return { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}` };
+    return {
+      'content-type': 'application/json',
+      authorization: `Bearer ${this.apiKey}`,
+      // OpenRouter attribution (ignored by other OpenAI-compatible providers)
+      'HTTP-Referer': 'https://github.com/ladekarl1234-commits/liara-copilot',
+      'X-Title': 'Liara Copilot',
+    };
   }
 
   private async post(pathname: string, body: object, signal?: AbortSignal): Promise<Response> {
@@ -94,7 +101,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const res = await this.post('/chat/completions', body, opts.signal);
     const data = await res.json();
     const text: string = data.choices?.[0]?.message?.content ?? '';
-    return { text, usage: usageOf(data.usage, opts.messages, text) };
+    const model: string | undefined = typeof data.model === 'string' ? data.model : undefined;
+    if (model) opts.onMeta?.({ model });
+    return { text, usage: usageOf(data.usage, opts.messages, text), model };
   }
 
   async *generateStream(opts: GenerateOptions): AsyncIterable<string> {
@@ -111,6 +120,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     try {
       const decoder = new TextDecoder();
       let buf = '';
+      let metaSent = false;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -121,7 +131,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
           const m = line.match(/^data:\s*(.*)$/);
           if (!m || m[1].trim() === '[DONE]') continue;
           try {
-            const delta = JSON.parse(m[1]).choices?.[0]?.delta?.content;
+            const parsed = JSON.parse(m[1]);
+            if (!metaSent && typeof parsed.model === 'string') {
+              metaSent = true;
+              opts.onMeta?.({ model: parsed.model }); // actual model (openrouter/free routes dynamically)
+            }
+            const delta = parsed.choices?.[0]?.delta?.content;
             if (delta) yield delta;
           } catch {
             // partial/keepalive line — ignore
@@ -157,7 +172,9 @@ function sleep(ms: number) {
 
 let providerSingleton: ModelProvider | null = null;
 export function getProvider(): ModelProvider {
-  if (!providerSingleton) providerSingleton = new OpenAICompatibleProvider();
+  if (!providerSingleton) {
+    providerSingleton = config().llmMock ? new MockLLMProvider() : new OpenAICompatibleProvider();
+  }
   return providerSingleton;
 }
 export function setProviderForTests(p: ModelProvider | null) {

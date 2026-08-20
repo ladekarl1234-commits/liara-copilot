@@ -123,3 +123,40 @@ that it must ship with an explicit, unambiguous user-confirmation step in
 the UI before the orchestrator is allowed to call it — no such capability
 exists yet, so no confirmation UX exists yet either; this is stated here as
 a requirement for that future work, not as something implemented now.
+
+## Amendment additions (voice + OpenRouter provider)
+
+### Server-side provider keys
+`OPENROUTER_API_KEY` and `SONIOX_API_KEY` are read only in server code
+(`src/lib/config.ts`, `src/lib/ai/provider.ts`, `src/lib/speech/soniox.ts`).
+They are never sent to the browser, never placed in HTML/JSON responses, and
+never logged. The browser talks only to `/api/chat` and `/api/voice/transcribe`;
+all model and STT calls happen server-side. `.env.example` is committed with
+empty values; real values live only in the environment.
+
+### Secret redaction before external inference (AC-SEC-002)
+`redactSecrets()` (`src/lib/security/redact.ts`) runs on the user message before
+it reaches the model at **every** model-bound sink — the plan call, the captured
+`knownError`, the answer prompt, the retrieval-fallback query, the dev trace, and
+the **rolling conversation summary** (`pushTurn`, embedded in the system prompt on
+every later turn, so a turn-1 paste cannot leak on turn 2). It preserves
+diagnostic structure while removing the value:
+
+- `API_KEY=abcdef12345` → `API_KEY=[REDACTED]`
+- `DATABASE_URL=postgres://user:password@host/db` → `…user:[REDACTED]@host/db`
+- `Authorization: Bearer <token>` → `Bearer [REDACTED]`
+
+Retrieval still runs on the raw text (redaction keeps keywords like
+`DATABASE_URL`/`postgres`, so recall is unaffected). The dev search-trace buffer
+also stores the redacted message. Tests: `tests/redact.test.ts`.
+
+### Voice input surface
+`/api/voice/transcribe` is rate-limited (same per-IP + global backstop as chat),
+caps upload size (`VOICE_MAX_BYTES`, 413), accepts only a multipart `audio`
+field, and logs transcript **length** only — never the transcript text. Returns
+503 when STT is unconfigured (no key leak, no stack trace).
+
+### Diagnostics gating
+`/api/diag` and `/internal` return 404 unless `DIAG_ENABLED=on` (default: on in
+dev, off in prod). They expose measured index/eval/trace data only; the trace
+message is redacted.

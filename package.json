@@ -10,10 +10,14 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "sync-docs": "node scripts/sync-docs.mjs",
+    "docs:sync": "node scripts/sync-docs.mjs",
     "build-index": "tsx scripts/build-index.ts",
     "index": "npm run sync-docs && npm run build-index",
     "evaluate": "tsx scripts/evaluate.ts",
-    "evaluate:retrieval": "tsx scripts/evaluate.ts --retrieval-only"
+    "evaluate:retrieval": "tsx scripts/evaluate.ts --retrieval-only",
+    "benchmark:retrieval": "tsx scripts/evaluate.ts --retrieval-only",
+    "benchmark:load": "node scripts/benchmark-load.mjs",
+    "eval": "tsx scripts/evaluate.ts --retrieval-only"
   },
   "dependencies": {
     "minisearch": "^7.1.0",

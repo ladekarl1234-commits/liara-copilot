@@ -17,6 +17,7 @@ import { log, logMetrics } from '@/lib/obs/log';
 import { recordTrace } from '@/lib/obs/trace';
 import { recordGap } from '@/lib/obs/gaps';
 import { detectInjection } from '@/lib/security/injection';
+import { redactSecrets } from '@/lib/security/redact';
 
 // ponytail: in-memory FAQ answer cache (stateless first-turn Q&A only);
 // single-instance ceiling, same upgrade path as the session store.
@@ -52,6 +53,7 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
   let usage: Usage = { inputTokens: 0, outputTokens: 0 };
   let retrieval: RetrievalResult | undefined;
   let modelRoute = 'none';
+  let actualModel: string | undefined; // model that actually served (openrouter/free is dynamic)
   let cacheHit = false;
   let errorCategory: string | undefined;
   let intent: import('@/types').Intent | undefined;
@@ -87,8 +89,15 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
       return;
     }
 
+    // Redact pasted secrets (API keys, connection-string passwords, bearer
+    // tokens) once, up front. Everything model-bound — the plan call, the
+    // captured knownError, the answer prompt — uses this form, never the raw
+    // paste (AC-SEC-002). Retrieval still runs on the raw message (redaction
+    // preserves keywords like DATABASE_URL/postgres, so recall is unaffected).
+    const modelSafe = redactSecrets(sanitizeFences(message));
+
     emit({ type: 'stage', stage: 'understanding' });
-    const planned = await makePlan(sanitizeFences(message), session, provider, signal);
+    const planned = await makePlan(modelSafe, session, provider, signal);
     const plan = planned.plan;
     usage = addUsage(usage, planned.usage);
     intent = plan.intent;
@@ -124,7 +133,9 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
         ? (texts: string[]) => provider.embed(texts, cfg.AI_EMBEDDINGS_MODEL!)
         : undefined;
     retrieval = await search(
-      plan.retrievalQueries.length ? plan.retrievalQueries : [message.slice(0, 200)],
+      // modelSafe (redacted), never the raw message: when embeddings are on this
+      // query is sent to the embeddings provider and stored in the dev trace.
+      plan.retrievalQueries.length ? plan.retrievalQueries : [modelSafe.slice(0, 200)],
       plan.filters,
       { embedQuery, priorTurns: session.turns },
     );
@@ -196,9 +207,16 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     let answer = '';
     const answerMessages = [
       { role: 'system' as const, content: answerSystemPrompt(session, retrieval.chunks) },
-      { role: 'user' as const, content: `<user_data>\n${sanitizeFences(message)}\n</user_data>` },
+      { role: 'user' as const, content: `<user_data>\n${modelSafe}\n</user_data>` },
     ];
-    const stream = provider.generateStream({ model: route.model, messages: answerMessages, maxTokens: 1400, temperature: 0.2, signal });
+    const stream = provider.generateStream({
+      model: route.model,
+      messages: answerMessages,
+      maxTokens: 1400,
+      temperature: 0.2,
+      signal,
+      onMeta: (m) => { if (m.model) actualModel = m.model; },
+    });
     for await (const delta of stream) {
       answer += delta;
       emit({ type: 'delta', text: delta });
@@ -281,13 +299,14 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
       estimatedCostUsd: estimateCostUsd(usage),
       cacheHit,
       retrievalConfidence: retrieval?.confidence,
-      modelRoute,
+      modelRoute: actualModel ? `${modelRoute} → ${actualModel}` : modelRoute,
       errorCategory,
     });
     recordTrace({
       requestId,
       ts: new Date().toISOString(),
-      message: message.slice(0, 300),
+      // redact any pasted secret before it lands in the dev trace buffer
+      message: redactSecrets(message).slice(0, 300),
       retrieval: retrieval
         ? {
             queries: retrieval.queries,
@@ -297,6 +316,7 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
           }
         : undefined,
       modelRoute,
+      actualModel,
       usage,
       totalLatencyMs,
       error: errorCategory ? `${errorCategory} (${outcome})` : undefined,

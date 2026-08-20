@@ -177,6 +177,86 @@ button:not(:disabled) {
   filter: brightness(1.08);
 }
 
+/* ---------- voice ---------- */
+
+.mic-btn {
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.7rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.mic-btn:not(:disabled):hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.mic-btn:disabled {
+  opacity: 0.4;
+}
+
+.mic-recording {
+  border-color: var(--err);
+  color: #fff;
+  background: var(--err);
+  animation: mic-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--err) 45%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--err) 0%, transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mic-recording { animation: none; }
+}
+
+.voice-status {
+  margin-top: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.voice-status-error {
+  color: var(--err);
+}
+
+.msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.listen-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+}
+
+.listen-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.listen-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ---------- chips ---------- */
 
 .chip {
@@ -721,3 +801,82 @@ button:not(:disabled) {
   color: var(--muted);
   margin-inline-end: 0.35em;
 }
+
+/* ---------- internal diagnostics (/internal) ---------- */
+
+.internal {
+  max-width: 60rem;
+  margin-inline: auto;
+  padding: 1.5rem 1.25rem 4rem;
+  font-family: var(--font-sans);
+}
+
+.internal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.internal h1 { font-size: 1.15rem; font-weight: 700; }
+.internal h2 { font-size: 0.95rem; font-weight: 700; margin: 1.75rem 0 0.75rem; }
+.internal .mut { color: var(--muted); font-size: 0.8rem; }
+.internal .mono { font-family: var(--font-mono); }
+
+.internal .grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.6rem;
+}
+
+.stat {
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--surface);
+  padding: 0.6rem 0.7rem;
+}
+
+.stat-label { font-size: 0.7rem; color: var(--muted); }
+.stat-value { font-size: 1.05rem; font-weight: 600; margin-top: 0.2rem; word-break: break-word; }
+.stat-value.mono { font-size: 0.82rem; font-weight: 500; }
+
+.traces { display: flex; flex-direction: column; gap: 0.35rem; }
+
+.trace {
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+  background: var(--surface);
+  padding: 0.5rem 0.7rem;
+}
+
+.trace summary {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.trace-msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; }
+.trace-body { margin-top: 0.5rem; font-size: 0.78rem; color: var(--ink); display: flex; flex-direction: column; gap: 0.25rem; }
+.trace-body ol { margin: 0.25rem 0 0; padding-inline-start: 1.2rem; }
+.trace-body a { color: var(--accent); }
+.trace-body .err { color: var(--err); }
+
+.badge {
+  flex: none;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.badge-high { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.badge-medium { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.badge-low { color: var(--err); border-color: color-mix(in srgb, var(--err) 45%, transparent); }
+.badge-error { color: var(--err); border-color: var(--err); }

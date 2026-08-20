@@ -1,234 +1,151 @@
-# Liara Copilot
+<div align="center">
 
-A Persian-first, grounded AI assistant over the official [Liara.ir](https://liara.ir)
-cloud platform docs. Built for the Liara AI Challenge, **Phase 1: fully local**
-— no real Liara deployment, no real Liara account/API connection. Both are
-prepared in code and documented for later (see [Current limitations](#current-limitations)
-and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)).
+# 🛰️ Liara Copilot
 
-## The problem
+**An evidence-grounded AI support assistant that turns Liara's documentation into actionable help — in Persian, by text or voice.**
 
-Liara users open support tickets because they cannot find, understand,
-connect, or apply the official documentation. Liara Copilot moves a user from
-"I have a problem" to "verified resolved," with every claim traceable to a
-specific docs page and section.
+Ask a question, paste an error, or speak — get a grounded answer with citations to the exact docs section, or an honest *"I couldn't find this."*
 
-## What it does
+`Next.js 15` · `TypeScript` · `Hybrid retrieval` · `OpenRouter` · `Soniox voice` · `Persian-first RTL`
 
-One conversational interface — no mode tabs — that infers per message whether
-the user needs:
+**Status:** Phase I — fully runnable locally. No real Liara deploy / account API yet (prepared in code).
 
-- **Ask** — a grounded answer with citations to exact doc sections (deep
-  `#anchor` links where recoverable, page URL otherwise).
-- **Fix** — stateful troubleshooting: ranked hypotheses, one diagnostic step
-  at a time, wait for the result, adapt, explicit `Resolved ✓` with root
-  cause.
-- **Guide** — a stateful multi-step workflow checklist (e.g. "Django +
-  PostgreSQL, deploy on Liara"), one next step per turn.
+<img src="landing.png" alt="Liara Copilot — ask Liara anything" width="720">
 
-Other features:
+</div>
 
-- **Evidence gate** — below a measured confidence threshold the assistant
-  will not answer; it asks one targeted clarification or says the docs don't
-  establish the answer, instead of guessing.
-- **Claim verification** — an optional post-answer pass checks Liara-specific
-  claims against the retrieved evidence and appends a correction note if
-  something is unsupported.
-- **Conversation state** — product/platform/language/db/package manager,
-  known error, tried actions, hypothesis ledger, workflow steps, expertise
-  level. Never re-asked once known; a rolling ≤900-char summary stands in for
-  full history.
-- **Troubleshooting & workflow UI** — hypothesis ledger and step checklist
-  rendered live from server-pushed state.
-- **Personalization** — beginner/intermediate/advanced inferred from
-  conversation, adjusts verbosity and step granularity. No questionnaire.
-- **Persian-first RTL UI** — `dir=rtl` root, `dir=auto` per message, LTR code
-  blocks and URLs, natural Persian with English technical identifiers intact.
-- **Cost controls** — ≤2 model calls per message (plan + answer) plus an
-  optional verification call; 0 calls for greetings and keyless mode; token
-  budgets per stage; FAQ answer caching; model routing (cheap vs. reasoning
-  model). See [docs/COST.md](docs/COST.md).
-- **Observability** — structured JSON logs per request (latencies, tokens,
-  cost estimate, cache hit, retrieval confidence), a dev-only `/api/diag`
-  panel (last 20 pipeline traces + gap log), a documentation-gap recorder for
-  low-confidence/unhelpful questions.
+---
 
-## Architecture overview
+## 🧠 What it does
 
-Next.js 15 App Router modular monolith. No database — a local lexical index
-(MiniSearch) built from the docs repo, optional vector search, in-memory LRU
-sessions, JSONL for feedback/gap logs.
+A single, calm chat surface — *"ask Liara anything"* — that automatically infers what you need:
+
+- **Ask** — grounded answers with deep-anchor citations (`docs.liara.ir/...#section`).
+- **Fix** — support-engineer troubleshooting: diagnose → one next test → adapt (not 14 causes at once).
+- **Guide** — a stateful multi-step checklist (e.g. deploy Django + PostgreSQL).
+
+The interaction is deliberately simple. The engineering underneath is not.
+
+> **High internal sophistication, near-zero external complexity.**
+
+## 🏗 Architecture
 
 ```mermaid
-flowchart LR
-    U["Browser UI (fa, dir=rtl)"] -->|SSE POST| API["POST /api/chat"]
-    API --> RL["rate limit + validate"]
-    RL --> ORC["Orchestrator"]
-    ORC -->|"1 call, cheap model"| PLAN["Plan: intent + state patch + retrieval queries"]
-    PLAN --> RET["Retrieval: lexical + optional vector, RRF fusion + boosts"]
-    RET --> GATE{"Evidence gate"}
-    GATE -->|low| INSUFFICIENT["Honest 'not in docs'"]
-    GATE -->|"ok, keyless"| SOURCES["Sources only"]
-    GATE -->|ok| ANSWER["Answer: 1 call, routed model, streamed"]
-    ANSWER --> VERIFY["Verify: optional cheap-model claim check"]
-    VERIFY --> DONE["citations + state + done"]
-    ORC --> SESS[("Session LRU, in-memory")]
-    RET --> IDX[("Local index: MiniSearch + vectors")]
+flowchart TD
+  U["User — text or 🎙 voice"] --> STT["Soniox STT (server-side)"]
+  U --> C["Chat composer (Persian RTL)"]
+  STT --> C
+  C --> P["Plan: intent + context + query rewrite"]
+  P --> RD["Redact secrets"]
+  RD --> R["Hybrid retrieval"]
+  R --> LEX["Lexical BM25 (MiniSearch)"]
+  R --> VEC["Vector cosine (optional)"]
+  LEX --> F["RRF fusion + metadata filter + boosts"]
+  VEC --> F
+  F --> G["Evidence gate — refuse if weak"]
+  G -->|enough| LLM["OpenRouter (openrouter/free) — streamed"]
+  G -->|weak| REF["Honest refusal / Fix / Guide"]
+  LLM --> V["Claim verification"]
+  V --> A["Grounded answer + citations + 🔊 Listen"]
 ```
 
-Full request lifecycle, retrieval pipeline internals, and the model-provider
-abstraction are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
-[docs/RETRIEVAL.md](docs/RETRIEVAL.md).
+Modular monolith, one deployable container. Full rationale in [`docs/adr/`](docs/adr/) and [`docs/STACK-EVALUATION.md`](docs/STACK-EVALUATION.md).
 
-## Quick start
+## 🔎 Retrieval
+
+Official Liara docs (`liara-cloud/docs`, `public/llms/**`) → structural chunking (commands stay attached to their explanation, metadata preserved) → **hybrid** lexical BM25 + optional cosine vectors fused by **Reciprocal Rank Fusion** → metadata filter + boosts → **evidence gate**. Persian normalization (ی/ي, ک/ك, ZWNJ, digit folding) and synonym folding are applied *identically* at index and query time. Exact identifiers (`DATABASE_URL`, `502`, `CNAME`) are why retrieval is hybrid, not vector-only. Details: [`docs/RETRIEVAL.md`](docs/RETRIEVAL.md).
+
+## 🎙 Voice
+
+Press mic → speak → stop → see transcript → send. STT is **Soniox** (server-side key, native Persian); TTS is the browser's `SpeechSynthesis` behind an opt-in **🔊 Listen**. Both sit behind provider abstractions (`SpeechToTextProvider` / `TextToSpeechProvider`). Mic states — `idle · requesting · listening · processing · transcribed · error` — are explicit, and a mic failure never discards typed text. Details: [`docs/VOICE.md`](docs/VOICE.md) · rationale: [ADR 0006](docs/adr/0006-voice-architecture.md).
+
+## 🧪 Evaluation & tests
+
+Measured, reproducible — **no fabricated numbers**.
+
+**Retrieval** (`evals/`, 61 fixed cases, lexical-only lower bound; the live pipeline adds LLM query rewriting):
+
+| Metric | Recall@1 | Recall@3 | Recall@5 | MRR | Gate accuracy |
+|---|---:|---:|---:|---:|---:|
+| Value | 0.44 | 0.75 | **0.813** | 0.595 | **0.923** |
+
+CI enforces floors (Recall@5 ≥ 0.66, gate ≥ 0.75) via exit code. Reproduce: `npm run benchmark:retrieval`.
+
+**Tests:** `183 passed / 18 files` (`npm test`) · typecheck clean · `npm run build` clean · `npm audit` **0 vulnerabilities**.
+
+## ⚡ Performance (mock-LLM load test)
+
+The LLM is **mocked** (`LLM_MOCK=on`) so this measures HTTP transport, retrieval, streaming and concurrency — **not** model quality or inference latency, and it spends **zero** OpenRouter quota. Environment: win32 x64, 8 CPUs, Node v24 · 400 requests · concurrency 25.
+
+| Scenario | ok/err | Throughput | p50 | p95 | p99 |
+|---|---|---:|---:|---:|---:|
+| `/api/health` | 400 / 0 | 640 req/s | 36 ms | 52 ms | 56 ms |
+| `/api/chat` (full pipeline, streamed) | 400 / 0 | 104.5 req/s | 232 ms | 282 ms | 315 ms |
+| `/api/diag` | 400 / 0 | 255.3 req/s | 95 ms | 113 ms | 124 ms |
+
+Evidence: [`benchmarks/`](benchmarks/). Reproduce: `npm run benchmark:load`.
+
+## 🔐 Security
+
+Server-side keys only (`OPENROUTER_API_KEY`, `SONIOX_API_KEY` never reach the browser/logs) · **secret redaction** of pasted content before external inference (`API_KEY=[REDACTED]`, `postgres://user:[REDACTED]@host`) · deterministic **prompt-injection** detector + `<user_data>` fencing · per-IP rate limit + global spend backstop · streamed body caps · safe Markdown (no raw HTML sink) · hashed PII in logs. Details: [`docs/SECURITY.md`](docs/SECURITY.md).
+
+## 💰 Cost
+
+Generation defaults to the **OpenRouter Free Router** (`openrouter/free`, $0 on the free tier); the actual model per call is recorded because the router is dynamic. **Zero** LLM calls on greeting / cache hit / keyless / injection. Embeddings are off by default (lexical-only), so indexing is $0 unless enabled. Details: [`docs/COST.md`](docs/COST.md).
+
+## 📈 Scalability
+
+Stateless app processes; externalizable session/rate/cache stores (in-memory now, Keyv/Redis behind the same functions later); the index is a read-only artifact rebuilt out of band (can become a worker); provider abstractions for LLM/STT/cache/Liara-API. Expected first bottleneck: external LLM latency/quota, then the single-instance in-memory stores. Honest scaling model — not "infinitely scalable." Details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## 🚀 Running locally
 
 ```bash
 npm install
-cp .env.example .env        # all keys optional — see below
-npm run index                # sync-docs + build-index (~1-2 min, no key needed)
-npm run dev                  # http://localhost:3000
+npm run index            # sync Liara docs + build the search index (data/index/)
+cp .env.example .env     # add OPENROUTER_API_KEY (and SONIOX_API_KEY for voice)
+npm run dev              # http://localhost:3000
 ```
 
-Without any `AI_*` key configured, the app runs in **degraded keyless mode**:
-retrieval works fully, and instead of a generated answer the assistant
-returns the closest official docs pages as sources (honest, not a fake
-answer). Set `AI_BASE_URL` + `AI_API_KEY` to enable generation.
+Runs **keyless** too (grounded source listings, Fix/Guide visible, zero model calls). For a no-key end-to-end answer path, set `LLM_MOCK=on`. Internal diagnostics: `/internal` (dev, or `DIAG_ENABLED=on`).
 
-## Environment variables
+### Scripts
 
-All parsed and defaulted in `src/lib/config.ts`.
-
-| Variable | Default | Notes |
-|---|---|---|
-| `AI_BASE_URL` | — | OpenAI-compatible base URL (Liara AI, OpenRouter, Ollama, OpenAI). |
-| `AI_API_KEY` | — | Secret. Server-side only, never sent to the browser. |
-| `AI_MODEL_FAST` | `openai/gpt-4.1-mini` | Planning, verification, simple grounded answers. |
-| `AI_MODEL_SMART` | = `AI_MODEL_FAST` | Troubleshooting/workflow reasoning, non-high-confidence answers. |
-| `AI_EMBEDDINGS_MODEL` | — | Unset ⇒ lexical-only index. Set ⇒ hybrid retrieval turns on automatically. |
-| `VERIFY_CLAIMS` | `on` | Post-answer grounding check (`on`\|`off`). |
-| `MODEL_TIMEOUT_MS` | `30000` | Hard timeout per model call. |
-| `MODEL_MAX_RETRIES` | `2` | Retries on 429/500/502/503/504 and network/timeout errors. |
-| `COST_INPUT_PER_MTOK` / `COST_OUTPUT_PER_MTOK` | — | USD/1M tokens; enables `estimated_cost` in metrics. |
-| `RATE_LIMIT_RPM` | `20` | Per-client-IP token bucket, plus a global 10× backstop. |
-| `TRUST_PROXY` | `off` | `on` only behind a proxy that sets `x-forwarded-for` (Liara LB). Default fail-closed. |
-| `MAX_INPUT_CHARS` | `8000` | Chat message length cap. |
-| `MAX_BODY_BYTES` | `64000` | Enforced on the streamed body, not just the header. |
-| `DOCS_DIR` | `data/liara-docs` | Where `npm run sync-docs` clones the docs repo. |
-| `INDEX_DIR` | `data/index` | Built index artifacts. |
-| `RUNTIME_DIR` | `data/runtime` | `feedback.jsonl`, `gaps.jsonl`. |
-| `DIAG_ENABLED` | dev: on, prod: off | Overrides the `/api/diag` visibility default. |
-| `NODE_ENV` | `development` | Standard Next.js semantics. |
-
-## Indexing, evals, tests
-
-```bash
-npm run index               # sync-docs + build-index
-npm run build-index          # rebuild from an already-cloned data/liara-docs
-npm run evaluate              # retrieval-only eval (no key needed)
-npm run evaluate:retrieval    # same, explicit
-npm run evaluate -- --answers # LLM-judged answer eval — needs a running server + AI key
-npm test                      # vitest — 81 tests, 9 files
-npm run typecheck
-```
-
-## Evaluation results (measured, not assumed)
-
-Retrieval eval, `evals/results/retrieval-2026-08-20.json`: 57 cases across 20
-categories, single raw-question query, **lexical-only** (no embeddings model
-configured at eval time).
-
-| Metric | Value |
+| Command | What |
 |---|---|
-| hit@1 | 42% |
-| hit@3 | 73% |
-| hit@5 | 79.2% |
-| MRR | 0.575 |
-| Gate accuracy | 12/13 (0.923) — unsupported/adversarial cases refuse (evidence gate `low` or the deterministic injection detector); only one accepted-debt case (`crlf-bad-interpreter`) |
+| `npm run dev` / `build` / `start` | develop / production build / serve |
+| `npm test` · `npm run typecheck` | 183 tests · strict TS |
+| `npm run index` (`docs:sync` + `build-index`) | sync docs + build index (incremental, hash-based) |
+| `npm run benchmark:retrieval` | retrieval eval → `evals/results/` |
+| `npm run benchmark:load` | mock-LLM HTTP load test → `benchmarks/load/` |
 
-This is a **lower bound**: it queries the raw question once with no filters.
-The live chat pipeline additionally does bounded LLM query rewriting (≤3
-queries) and applies metadata filters derived from conversation state, both
-of which measurably help (e.g. platform-in-query boost, EN→FA expansion).
-See [docs/EVALUATION.md](docs/EVALUATION.md) for the full per-category table
-and the actual missed cases.
+## 🗂 Repository structure
 
-Vector/hybrid retrieval exists (`AI_EMBEDDINGS_MODEL` + a configured key) but
-is **unmeasured** — no embeddings model was configured for this eval run.
-
-Answer-quality eval (LLM-judged, `scripts/evaluate.ts --answers`) is
-implemented but **not yet run** — it requires a configured AI provider key
-for the judge model and a running server.
-
-Tests: **149 passing** (`vitest run`, 15 files). `npm run build` succeeds
-cleanly; `npm audit` reports 0 vulnerabilities. Keyless mode returns honest
-sources-only answers (see above), tested in `tests/orchestrator.test.ts`.
-
-## Production build & Docker
-
-```bash
-npm run build && npm start
+```
+spec.md                     product + engineering source of truth (AC-* criteria)
+src/
+  app/            routes: / (chat), /internal (diagnostics), api/{chat,voice,health,diag,feedback}
+  components/     Chat, useChat, useVoice, useTts, Sources, Markdown, ...
+  lib/
+    retrieval/    chunking, hybrid search, RRF, evidence gate
+    ai/           ModelProvider (OpenRouter) + MockLLMProvider + routing
+    speech/       SpeechToTextProvider → Soniox (server-side)
+    agent/        plan → orchestrate → prompts → verify
+    security/     injection detection, redaction, rate limit, validation
+    state/ obs/   sessions, logs, traces, gaps
+    liara/        LiaraProvider seam + MockLiaraProvider (future API)
+docs/             ARCHITECTURE, RETRIEVAL, EVALUATION, SECURITY, COST, DESIGN, VOICE, DEPLOYMENT, STACK-EVALUATION, adr/
+evals/            fixed datasets + measured results
+benchmarks/       load-test evidence (JSON)
 ```
 
-```bash
-docker build -t liara-copilot .
-docker run -p 3000:3000 --env-file .env liara-copilot
-```
+## 🗺 Roadmap (next phases)
 
-The Dockerfile bakes the **lexical-only** index into the image at build time
-(`npm run sync-docs && npx tsx scripts/build-index.ts`, no API key required).
-Shipping a vector-enabled image requires building `data/index` with
-`AI_EMBEDDINGS_MODEL`/`AI_BASE_URL`/`AI_API_KEY` set and copying it in — see
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+- Real Liara deployment (Docker + env/secrets + index init) — **prepared, out of Phase I**.
+- Real Liara-account API (`RealLiaraProvider` behind the existing seam, per-action confirmation).
+- With-key answers-mode eval + hybrid-retrieval A/B (Persian embedding model selection).
 
-## Current limitations
+---
 
-- **Phase 1 has no real Liara account connection.** `LiaraProvider` (read-only
-  interface: apps, deployments, logs, envs, domains, databases — no
-  destructive operations by design) has one implementation,
-  `MockLiaraProvider` (`src/lib/liara/mock.ts`), and it is not currently
-  wired into the agent's conversation loop. It exists as the seam for a
-  future `RealLiaraProvider`.
-- **No real Liara deployment in this phase.** `Dockerfile` + `liara.json` +
-  this doc set are prepared and unexecuted.
-- **Single-instance ceilings, documented in code:** sessions
-  (`src/lib/state/sessions.ts`) and the rate limiter
-  (`src/lib/security/ratelimit.ts`) are in-memory; a restart forgets
-  conversations; multi-instance deploys need a shared store swapped in behind
-  the same small interfaces.
-- **Vector/hybrid retrieval is implemented but unmeasured** — the committed
-  eval ran lexical-only.
-- **Answers-mode eval has not been run** — no AI key was configured for this
-  submission's eval pass.
-- **Anchor coverage is 36.6%** of chunks (recovered from authored MDX
-  `<Section id>` props); the remainder cite the page URL without a deep
-  anchor.
-- **The retrieval gate is lexical, and by design not a topic classifier.** It
-  reliably refuses gibberish and all-stopword input (gate `low`), but an
-  off-topic question that shares a real Liara word ("cake **recipe**" →
-  "recipe"; a cooking "**دستور**" collides with CLI "دستور/command") lands at
-  `medium` — lexically indistinguishable from a legitimate one-concept query.
-  Those are defended at the next layer: the answer model is instructed to
-  answer only from evidence and otherwise say "not in the docs", and the
-  claim-verification stage flags unsupported claims. Two eval gate cases
-  (`crlf-bad-interpreter`, `adversarial-destructive`) are accepted debt for
-  the same reason — see [docs/EVALUATION.md](docs/EVALUATION.md).
-
-## Future work
-
-- Swap `MockLiaraProvider` for a `RealLiaraProvider` behind the same
-  `LiaraProvider` interface; add explicit user-confirmation UX before any
-  future mutating call (none exist in the interface today).
-- Deploy via `liara.json` + `Dockerfile` once account access is available.
-- Run the answers-mode eval and hybrid/vector retrieval eval with a
-  configured `AI_*` key; compare against the lexical-only baseline above.
-
-## Documentation set
-
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — request lifecycle, pipeline stages, state, model routing, security boundaries.
-- [docs/RETRIEVAL.md](docs/RETRIEVAL.md) — ingestion, chunking, anchors, Persian normalization, index, fusion, gate.
-- [docs/EVALUATION.md](docs/EVALUATION.md) — dataset, metrics, per-category table, named failure cases, judge schema.
-- [docs/SECURITY.md](docs/SECURITY.md) — threat model, secrets, rate limiting, validation, rendering safety.
-- [docs/COST.md](docs/COST.md) — token budgets, routing, caching, request classes.
-- [docs/DESIGN.md](docs/DESIGN.md) — UI/UX decisions, RTL, progressive disclosure, accessibility.
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — future Liara deployment plan (not executed).
-- [docs/DECISIONS.md](docs/DECISIONS.md) — architectural decision log (D1–D8).
+<div align="center">
+Built for the Liara AI Copilot Challenge. Every claim here is backed by code, tests, or an ADR — never marketing language alone.
+</div>

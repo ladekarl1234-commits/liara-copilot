@@ -182,3 +182,23 @@ account (redeploy, restart, delete) should ship with an explicit
 user-confirmation step in the UI before the orchestrator ever calls it. No
 such capability exists yet; this is a design boundary for later work, not
 code in this phase.
+
+## Amendment additions — modules for voice, provider, and diagnostics
+
+New/updated logical modules (still one repo, one container):
+
+- **LLM provider** (`src/lib/ai/`): `ModelProvider` contract →
+  `OpenAICompatibleProvider` (OpenRouter default) + `MockLLMProvider`
+  (deterministic, for load tests / offline). Actual model recorded per call.
+- **Speech** (`src/lib/speech/`): `SpeechToTextProvider` → `SonioxSttProvider`
+  (server-side). TTS is browser-side (`useTts`) behind `TextToSpeechProvider`.
+- **Security/redaction** (`src/lib/security/redact.ts`): strips secrets from
+  user content before external inference.
+- **Voice API** (`src/app/api/voice/transcribe`): multipart audio → transcript.
+- **Internal diagnostics** (`/internal` + `/api/diag`): dev-gated page showing
+  index status, provider/model usage, retrieval eval, and live search traces —
+  kept entirely separate from the public chat surface.
+
+Scaling model and future-tool (`LiaraTool`) boundaries are unchanged; the new
+modules follow the same "provider abstraction + stateless app + externalizable
+store" rules (see ADR 0005–0007).

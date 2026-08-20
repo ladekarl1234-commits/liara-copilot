@@ -218,7 +218,7 @@ describe('orchestrator', () => {
       .filter((e): e is Extract<ChatEvent, { type: 'delta' }> => e.type === 'delta')
       .map((e) => e.text)
       .join('');
-    expect(text).toContain('AI_BASE_URL');
+    expect(text).toContain('OPENROUTER_API_KEY');
   });
 
   it('maps provider failure to a useful error event', async () => {

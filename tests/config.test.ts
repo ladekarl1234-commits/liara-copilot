@@ -3,6 +3,8 @@ import path from 'node:path';
 import { config, resetConfigForTests } from '@/lib/config';
 
 const KEYS = [
+  'OPENROUTER_API_KEY', 'OPENROUTER_MODEL', 'OPENROUTER_BASE_URL', 'LLM_MOCK',
+  'SONIOX_API_KEY', 'SONIOX_MODEL', 'SONIOX_BASE_URL', 'VOICE_MAX_BYTES',
   'AI_BASE_URL', 'AI_API_KEY', 'AI_MODEL_FAST', 'AI_MODEL_SMART', 'AI_EMBEDDINGS_MODEL',
   'VERIFY_CLAIMS', 'MODEL_TIMEOUT_MS', 'MODEL_MAX_RETRIES',
   'COST_INPUT_PER_MTOK', 'COST_OUTPUT_PER_MTOK',
@@ -32,7 +34,7 @@ afterEach(() => {
 describe('config', () => {
   it('applies defaults', () => {
     const c = config();
-    expect(c.AI_MODEL_FAST).toBe('openai/gpt-4.1-mini');
+    expect(c.fastModel).toBe('openai/gpt-4.1-mini'); // computed default when no provider is configured
     expect(c.VERIFY_CLAIMS).toBe('on');
     expect(c.MODEL_TIMEOUT_MS).toBe(30_000);
     expect(c.MODEL_MAX_RETRIES).toBe(2);

@@ -141,3 +141,28 @@ answers would fabricate user state — worse than useless for answer
 correctness. `RealLiaraProvider` (phase 2) slots in behind the same interface
 with per-action confirmation boundaries; destructive operations are absent
 from the interface by design.
+
+## Phase I Amendment (voice, OpenRouter, docs/benchmarks) — deviations & choices
+
+- **LLM provider = OpenRouter Free Router** (`openrouter/free`) as the default,
+  implemented over the existing `OpenAICompatibleProvider` (no new transport).
+  A generic `AI_BASE_URL/AI_API_KEY` still overrides it. Actual returned model
+  recorded per call (the free router is dynamic). ADR 0005.
+- **Voice STT = Soniox** (server-side), not browser `SpeechRecognition`, because
+  Persian is the primary language and browser STT is unreliable/absent for it
+  and Chrome-only. TTS = browser `SpeechSynthesis` (opt-in, zero cost). ADR 0006.
+- **MockLLMProvider** added for load testing and offline dev so infrastructure
+  benchmarking spends zero external quota (amendment §Do not waste live requests).
+- **Secret redaction** added before external inference (`redactSecrets`), applied
+  to the plan call, captured error context, answer prompt, and dev trace.
+- **Root `spec.md`** created as the mandated source of truth (with AC-* ids);
+  the older `specs/spec.md` is retained as historical.
+- **`/internal` diagnostics page** added (dev-gated) — index status, provider/
+  model usage, retrieval eval, live search traces — separate from the public UI.
+- **Docs added:** `docs/adr/0001–0007`, `docs/STACK-EVALUATION.md`,
+  `docs/VOICE.md`, `benchmarks/README.md`; existing docs extended with amendment
+  sections. Benchmark scripts: `benchmark:load` (new), `benchmark:retrieval`,
+  `docs:sync` aliases.
+- **No fabricated numbers:** every metric in README/docs is produced by a repo
+  script (retrieval eval, load JSON) or a test count; alternatives not stood up
+  are labelled inference, not measurement.

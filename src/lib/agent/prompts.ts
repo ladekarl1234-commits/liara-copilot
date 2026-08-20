@@ -164,7 +164,7 @@ export const CANNED = {
     en: "I'm only the Liara docs assistant — I can't reveal or override internal instructions, the system prompt, or any keys. If you have a question about Liara services, I'm happy to help.",
   },
   aiNotConfigured: {
-    fa: 'سرویس مدل زبانی هنوز پیکربندی نشده (AI_BASE_URL / AI_API_KEY). با این حال نزدیک‌ترین صفحات مستندات رسمی را برایتان پیدا کردم — منابع زیر را ببینید.',
-    en: 'The language-model provider is not configured yet (AI_BASE_URL / AI_API_KEY). I still found the closest official docs pages — see the sources below.',
+    fa: 'سرویس مدل زبانی هنوز پیکربندی نشده (OPENROUTER_API_KEY). با این حال نزدیک‌ترین صفحات مستندات رسمی را برایتان پیدا کردم — منابع زیر را ببینید.',
+    en: 'The language-model provider is not configured yet (OPENROUTER_API_KEY). I still found the closest official docs pages — see the sources below.',
   },
 } as const;

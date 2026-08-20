@@ -15,11 +15,11 @@ export function pickAnswerRoute(intent: Intent, confidence: 'high' | 'medium' | 
     intent === 'troubleshooting' || intent === 'workflow' || confidence !== 'high';
   return needsReasoning
     ? { model: cfg.smartModel, label: 'smart' }
-    : { model: cfg.AI_MODEL_FAST, label: 'fast' };
+    : { model: cfg.fastModel, label: 'fast' };
 }
 
 export function planRoute(): Route {
-  return { model: config().AI_MODEL_FAST, label: 'fast' };
+  return { model: config().fastModel, label: 'fast' };
 }
 
 export function estimateCostUsd(usage: Usage): number | undefined {

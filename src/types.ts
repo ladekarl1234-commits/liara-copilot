@@ -134,6 +134,9 @@ export interface GenerateOptions {
   temperature?: number;
   jsonSchema?: object; // request structured output
   signal?: AbortSignal;
+  /** provider reports the model that actually served the request (openrouter/free
+   * is a dynamic router). Called at most once per call, before/at first token. */
+  onMeta?: (meta: { model?: string }) => void;
 }
 
 export interface Usage {
@@ -144,6 +147,7 @@ export interface Usage {
 export interface GenerateResult {
   text: string;
   usage: Usage;
+  model?: string; // actual model returned by the provider, when reported
 }
 
 export interface ModelProvider {
@@ -203,7 +207,34 @@ export type ErrorCode =
   | 'model_unavailable'
   | 'index_missing'
   | 'invalid_input'
+  | 'voice_unavailable'
   | 'internal';
+
+// ---------- Speech (STT / TTS behind provider abstractions) ----------
+
+export interface Transcript {
+  text: string;
+  language?: string; // detected language code, when available
+  durationMs?: number;
+}
+
+export interface TranscribeOptions {
+  mimeType?: string;
+  languageHints?: string[]; // e.g. ['fa', 'en']
+  signal?: AbortSignal;
+}
+
+export interface SpeechToTextProvider {
+  transcribe(audio: Uint8Array, opts?: TranscribeOptions): Promise<Transcript>;
+}
+
+/** Text-to-speech contract. Phase I implements this in the browser
+ * (SpeechSynthesis); the interface keeps a future server/vendor TTS swappable. */
+export interface TextToSpeechProvider {
+  speak(text: string, opts?: { lang?: string }): Promise<void> | void;
+  stop(): void;
+  supported(): boolean;
+}
 
 // ---------- Observability ----------
 
