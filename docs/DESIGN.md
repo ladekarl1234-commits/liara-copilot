@@ -63,6 +63,18 @@ session.
   isolate` — their content is always an English/technical display name
   (`Next.js`, `PostgreSQL`) even in a Persian UI.
 
+## Typography note (known gap)
+
+`globals.css` declares `--font-sans: "Vazirmatn", "Segoe UI", Tahoma,
+ui-sans-serif, sans-serif`, but no `next/font`, Google Fonts `<link>`, or
+local `@font-face`/font file ships Vazirmatn anywhere in the repo
+(`src/app/layout.tsx` has no font import). In practice the UI renders in
+whatever the OS substitutes for the first unavailable name in that stack
+(`Segoe UI` on Windows, the system Persian font elsewhere) — Vazirmatn is
+declared as an intent, not an actually-bundled font. Fixing this is a
+one-line addition (a Google Fonts `@import`/`<link>` or `next/font/google`),
+noted here rather than silently claimed as working.
+
 ## Conversation patterns
 
 - **Stage lines**: while streaming and before the first text delta arrives,

@@ -46,10 +46,9 @@ confidence simple factual question always gets the fast model.
   invalidates every cached answer (stale evidence can't be served against a
   new index). Only eligible for **stateless first turns**
   (`session.turns === 0`), `intent === 'question'`, `confidence === 'high'`,
-  and zero unsupported claims from verification. A cache hit skips the
-  answer call and the verify call, but **not** the plan call — planning
-  happens before the cache lookup, so a cache-hit turn still costs 1 model
-  call, not 0 (see Request classes below).
+  and zero unsupported claims from verification. A cache hit is checked BEFORE the
+  plan call (deterministic language detection builds the key), so a
+  cache-hit turn costs **0 model calls** (see Request classes below).
 - **Loaded index** (`globalThis.__liaraIndex` in `src/lib/retrieval/index.ts`)
   — the lexical/vector index is parsed from disk once per process and kept
   in memory (survives Next.js dev hot-reload via the `globalThis` handle);
@@ -67,7 +66,7 @@ confidence simple factual question always gets the fast model.
 | Greeting | deterministic `GREETING_RE` match | **0** — `fallbackPlan()` short-circuits before any model call |
 | Keyless (no `AI_*` key) | `!config().aiConfigured` | **0** — `makePlan` returns the deterministic fallback whenever `provider` is `null`, for any message |
 | Clarify | plan `action === 'clarify'` | 1 (plan only) |
-| FAQ cache hit | stateless, cached, high-confidence | 1 (plan only — see caching note above) |
+| FAQ cache hit | stateless, cached, high-confidence | 0 |
 | Gate-failed (insufficient) | retrieval `confidence === 'low'` or empty | 1 (plan only) — retrieval runs but is free (local index) |
 | Simple grounded question | `high` confidence, `question` intent | 2 (plan + fast answer), +1 if `VERIFY_CLAIMS=on` and answer ≥200 chars |
 | Troubleshooting / workflow | intent match, or non-`high` confidence | 2 (plan + smart answer), +1 optional verify |

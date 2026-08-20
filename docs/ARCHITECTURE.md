@@ -24,14 +24,15 @@ sequenceDiagram
     R->>R: content-length guard, zod validate, rate limit (ip|sessionId)
     R->>O: handleChatMessage(emit)
     O-->>C: event: session
+    opt FAQ cache hit (turns=0, deterministic key) — 0 model calls
+        O-->>C: event: delta (cached) + citations + done
+    end
     O->>P: 1 call — plan (intent, statePatch,\nretrievalQueries<=3, filters)
     P-->>O: AgentPlan (zod-validated, falls back\nto deterministic plan on error)
     O->>O: applyPatch(session, statePatch)
     O-->>C: event: context (chips)
     alt chitchat / clarify
         O-->>C: event: delta (canned text) + done
-    else FAQ cache hit (turns=0, high-confidence, question)
-        O-->>C: event: delta (cached) + citations + done
     else
         O->>I: search(queries, filters)
         I-->>O: RetrievalResult (chunks, confidence, signals)
@@ -56,9 +57,9 @@ At most **2 model calls per user message** (plan + answer), plus one optional
 verification call. **0 calls** for greetings (deterministic `chitchat`
 short-circuit before any model call) and for keyless mode (no `AI_BASE_URL`/
 `AI_API_KEY` — the plan step itself skips the model call and falls back to
-`fallbackPlan()`). An FAQ cache hit still pays for the plan call (planning
-runs before the cache lookup) but skips the answer and verification calls —
-see [COST.md](COST.md) for the precise accounting.
+`fallbackPlan()`). An FAQ cache hit is looked up BEFORE the plan call
+(the key is built from deterministic language detection + normalized text +
+index version), so cache hits cost 0 model calls — see [COST.md](COST.md).
 
 ## Retrieval pipeline stages
 

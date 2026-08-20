@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import type { ChatEvent, Citation, ModelProvider, RetrievalResult, ScoredChunk, Usage } from '@/types';
 import { config } from '@/lib/config';
 import { search, loadIndex, citationUrl, IndexMissingError } from '@/lib/retrieval/index';
-import { normalizedKey } from '@/lib/text/persian';
+import { normalizedKey, detectLanguage } from '@/lib/text/persian';
 import { getProvider, ModelError } from '@/lib/ai/provider';
 import { pickAnswerRoute, estimateCostUsd, addUsage } from '@/lib/ai/router';
 import { makePlan } from '@/lib/agent/plan';
@@ -59,6 +59,19 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
   const provider: ModelProvider | null = cfg.aiConfigured ? getProvider() : null;
 
   try {
+    // FAQ cache first: a hit costs ZERO model calls (stateless first turns only;
+    // entries are only ever stored for verified, high-confidence question answers)
+    const preKey = session.turns === 0 ? cacheKeyFor(message, detectLanguage(message)) : null;
+    if (preKey && answerCache.has(preKey)) {
+      const hit = answerCache.get(preKey)!;
+      cacheHit = true;
+      emit({ type: 'delta', text: hit.text });
+      emit({ type: 'citations', citations: hit.citations });
+      finish(emit, session.id, message, hit.text);
+      record('cache');
+      return;
+    }
+
     emit({ type: 'stage', stage: 'understanding' });
     const planned = await makePlan(message, session, provider);
     const plan = planned.plan;
@@ -86,18 +99,6 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
       finish(emit, session.id, message, plan.clarifyQuestion);
       setLastAction(session.id, 'clarify');
       record('clarify');
-      return;
-    }
-
-    // --- FAQ cache (stateless first turns only) ---
-    const cacheKey = cacheKeyFor(message, plan.language);
-    if (plan.intent === 'question' && session.turns === 0 && cacheKey && answerCache.has(cacheKey)) {
-      const hit = answerCache.get(cacheKey)!;
-      cacheHit = true;
-      emit({ type: 'delta', text: hit.text });
-      emit({ type: 'citations', citations: hit.citations });
-      finish(emit, session.id, message, hit.text);
-      record('cache');
       return;
     }
 
@@ -178,9 +179,9 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
       log('warn', 'ungrounded_claims', { requestId, count: v.unsupportedCount });
     }
 
-    // cache stateless simple answers
-    if (plan.intent === 'question' && session.turns === 0 && retrieval.confidence === 'high' && cacheKey && v.unsupportedCount === 0) {
-      answerCache.set(cacheKey, { text: answer, citations });
+    // cache stateless simple answers (same deterministic key the pre-plan lookup uses)
+    if (plan.intent === 'question' && session.turns === 0 && retrieval.confidence === 'high' && preKey && v.unsupportedCount === 0) {
+      answerCache.set(preKey, { text: answer, citations });
       while (answerCache.size > ANSWER_CACHE_MAX) answerCache.delete(answerCache.keys().next().value as string);
     }
 
