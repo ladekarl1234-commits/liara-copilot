@@ -210,3 +210,26 @@ splitting), `tests/retrieval.test.ts` pins gate thresholds, the platform-
 filter fallback, and the 8-chunk evidence cap. Together, tests catch
 mechanical regressions and the eval catches quality regressions — neither
 substitutes for the other.
+
+## Hybrid retrieval modes (measured, local embeddings)
+
+The grounding eval above is lexical-only as shipped. A separate benchmark
+(`npm run benchmark:retrieval-modes`, `scripts/benchmark-retrieval-modes.ts`)
+measures the four retrieval strategies on the 48 sourced cases using a **local**
+multilingual embedding model (`Xenova/multilingual-e5-small`, 384-d, no API key),
+all driven through the shipped `search()` via benchmark-only mode flags:
+
+| Retrieval mode | Recall@1 | Recall@3 | Recall@5 | MRR | p95 |
+|---|---:|---:|---:|---:|---:|
+| Lexical (BM25) | 43.8% | 72.9% | 77.1% | 0.582 | 38 ms |
+| Vector (cosine) | 52.1% | 72.9% | 79.2% | 0.629 | 22 ms |
+| Hybrid (RRF) | 56.3% | 77.1% | 79.2% | 0.661 | 55 ms |
+| Hybrid + rerank | **58.3%** | **77.1%** | **81.3%** | **0.676** | 54 ms |
+
+This is the amendment's required lexical / vector / hybrid / hybrid+rerank
+comparison. It confirms the signals are complementary — hybrid beats either
+alone, and the deterministic rerank boosts add a further lift, so the shipped
+ranker (hybrid+rerank when embeddings are on) is the strongest. The mode flags
+are unit-tested (`tests/retrieval-modes.test.ts`); the raw JSON is committed under
+`benchmarks/retrieval/`. Numbers here (raw ranking, no evidence-selection cutoff)
+are not directly comparable to the grounding-eval hit@k (post evidence-selection).

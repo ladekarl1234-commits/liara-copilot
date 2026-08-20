@@ -236,5 +236,23 @@ export function useChat() {
     void run(lastUserRef.current, false);
   }, [run]);
 
-  return { messages, send, retry, status, stage, contextChips, sessionId };
+  /** Start a fresh conversation: drop history and the server session id. */
+  const reset = useCallback(() => {
+    abortRef.current?.abort();
+    streamingRef.current = false;
+    sessionRef.current = null;
+    lastUserRef.current = '';
+    try {
+      sessionStorage.removeItem(SESSION_KEY);
+    } catch {
+      // storage blocked — nothing to clear
+    }
+    setSessionId(null);
+    setMessages([]);
+    setContextChips([]);
+    setStatus('idle');
+    setStage(null);
+  }, []);
+
+  return { messages, send, retry, reset, status, stage, contextChips, sessionId };
 }

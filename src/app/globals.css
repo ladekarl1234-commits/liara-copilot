@@ -2,17 +2,24 @@
 
 /* ---------- palette ---------- */
 
+/* Light palette on bare :root (from the Liara Chat design). Dark is redefined
+   under prefers-color-scheme (guarded so an explicit light choice wins) and
+   under [data-theme] so the toggle overrides in both directions. */
 :root {
-  --bg: #fafafa;
+  --bg: #f6f8f9;
   --surface: #ffffff;
-  --ink: #1c1f23;
-  --muted: #5b6472;
-  --border: #e4e6ea;
-  --accent: #2563eb;
+  --ink: #181f24;
+  --muted: #5d6975;
+  --border: #e2e7ea;
+  --accent: #149ec4;
   --ok: #16794c;
   --err: #b3261e;
-  --code-bg: #f4f5f7;
-  --user-bg: #eef1f5;
+  --err-bg: #fdf3f2;
+  --code-bg: #eef2f4;
+  --user-bg: #eef2f4;
+  --g1: #7ce3a8;
+  --g2: #38c6f4;
+  --shadow: 0 10px 30px rgba(10, 20, 30, 0.07);
 
   --hl-comment: #6e7781;
   --hl-keyword: #cf222e;
@@ -23,17 +30,19 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #101215;
-    --surface: #16191d;
-    --ink: #e8eaed;
-    --muted: #9aa3ad;
-    --border: #272c33;
-    --accent: #60a5fa;
+  :root:not([data-theme="light"]) {
+    --bg: #0b0e11;
+    --surface: #13181d;
+    --ink: #e9edf0;
+    --muted: #94a0aa;
+    --border: #242c33;
+    --accent: #4cc6e6;
     --ok: #6fbf8f;
     --err: #f28b82;
+    --err-bg: #231517;
     --code-bg: #15181c;
-    --user-bg: #1d2127;
+    --user-bg: #1a2027;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 
     --hl-comment: #8b949e;
     --hl-keyword: #ff7b72;
@@ -42,6 +51,28 @@
     --hl-title: #d2a8ff;
     --hl-builtin: #ffa657;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0b0e11;
+  --surface: #13181d;
+  --ink: #e9edf0;
+  --muted: #94a0aa;
+  --border: #242c33;
+  --accent: #4cc6e6;
+  --ok: #6fbf8f;
+  --err: #f28b82;
+  --err-bg: #231517;
+  --code-bg: #15181c;
+  --user-bg: #1a2027;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+
+  --hl-comment: #8b949e;
+  --hl-keyword: #ff7b72;
+  --hl-string: #a5d6ff;
+  --hl-const: #79c0ff;
+  --hl-title: #d2a8ff;
+  --hl-builtin: #ffa657;
 }
 
 @theme inline {
@@ -53,7 +84,7 @@
   --color-accent: var(--accent);
   --color-ok: var(--ok);
   --color-err: var(--err);
-  --font-sans: "Vazirmatn", "Segoe UI", Tahoma, ui-sans-serif, sans-serif;
+  --font-sans: var(--font-vazir), "Vazirmatn", "Segoe UI", Tahoma, ui-sans-serif, sans-serif;
   --font-mono: ui-monospace, Consolas, monospace;
 }
 
@@ -880,3 +911,152 @@ button:not(:disabled) {
 .badge-medium { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .badge-low { color: var(--err); border-color: color-mix(in srgb, var(--err) 45%, transparent); }
 .badge-error { color: var(--err); border-color: var(--err); }
+
+/* ═══════════ Liara Chat redesign (imported design) ═══════════ */
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes logoIn { 0% { opacity: 0; transform: scale(.6); filter: blur(6px); } 60% { opacity: 1; transform: scale(1.06); filter: blur(0); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes floatA { from { transform: translate(-10%, -6%) scale(1); } to { transform: translate(8%, 10%) scale(1.15); } }
+@keyframes floatB { from { transform: translate(8%, 6%) scale(1.1); } to { transform: translate(-8%, -8%) scale(.95); } }
+
+/* theme toggle (fixed, top-inline-start) */
+.theme-toggle {
+  position: fixed;
+  top: 14px;
+  inset-inline-start: 14px;
+  z-index: 20;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  box-shadow: var(--shadow);
+}
+.theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ambient gradient blobs on the landing */
+.blobs { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.blob { position: absolute; border-radius: 50%; opacity: 0.16; filter: blur(70px); }
+.blob-a { top: -18%; inset-inline-end: -12%; width: 55vmax; height: 55vmax; background: radial-gradient(circle, var(--g1) 0%, transparent 62%); animation: floatA 14s ease-in-out infinite alternate; }
+.blob-b { bottom: -22%; inset-inline-start: -14%; width: 60vmax; height: 60vmax; background: radial-gradient(circle, var(--g2) 0%, transparent 62%); animation: floatB 17s ease-in-out infinite alternate; }
+
+/* landing */
+.landing-logo { width: 60px; height: 60px; border-radius: 18px; box-shadow: 0 0 40px rgba(90, 210, 200, .35), var(--shadow); animation: logoIn .8s cubic-bezier(.2,.8,.3,1.1) both; }
+.headline { margin: 24px 0 28px; font-size: clamp(22px, 4.5vw, 29px); font-weight: 800; text-align: center; letter-spacing: -0.01em; animation: fadeUp .6s ease .35s both; }
+.landing-note { margin-top: 42px; font-size: 12px; color: var(--muted); text-align: center; animation: fadeUp .6s ease .95s both; }
+
+/* header (chat state) */
+.brand-name { font-size: 14px; font-weight: 800; white-space: nowrap; }
+.brand-sub { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.header-logo { width: 28px; height: 28px; border-radius: 9px; }
+.new-chat {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 5px 13px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.new-chat:hover { border-color: var(--accent); color: var(--accent); }
+
+/* composer — rounded, gradient send */
+.composer { border-radius: 20px; gap: 8px; box-shadow: var(--shadow); padding-inline: 14px 12px; }
+.composer.in-chat { border-radius: 17px; box-shadow: none; }
+.send-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, var(--g1), var(--g2));
+  color: #06282f;
+}
+.composer.in-chat .send-btn,
+.composer.in-chat .mic-btn { width: 42px; height: 42px; border-radius: 12px; }
+.mic-btn { width: 44px; height: 44px; border-radius: 13px; }
+.mic-recording {
+  border-color: #e2443a;
+  background: #e2443a;
+  color: #fff;
+  animation: micPulse 1.4s ease-in-out infinite;
+}
+@keyframes micPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(226,68,58,.45); } 50% { box-shadow: 0 0 0 8px rgba(226,68,58,0); } }
+@media (prefers-reduced-motion: reduce) { .mic-recording, .blob, .landing-logo, .headline, .landing-note { animation: none !important; } }
+
+/* chips */
+.chip { border-radius: 999px; padding: 8px 16px; font-size: 13.5px; white-space: nowrap; }
+
+/* stage dot -> gradient */
+.stage::before { background: linear-gradient(135deg, var(--g1), var(--g2)); }
+
+/* ═══════════ redesign layout ═══════════ */
+
+.shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--ink);
+  position: relative;
+  overflow: hidden;
+}
+.shell.chat { height: 100dvh; }
+
+/* landing */
+.landing {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  position: relative;
+}
+.landing-inner {
+  width: 100%;
+  max-width: 680px;
+  margin-top: -8dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.chips {
+  margin-top: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* chat header */
+.chat-header { border-bottom: 1px solid var(--border); background: var(--bg); }
+.chat-header-inner {
+  margin: 0 auto;
+  max-width: 680px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  padding-inline-start: 64px; /* clear the fixed theme toggle */
+}
+
+/* chat log */
+.chat-log { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+.chat-log-inner {
+  margin: 0 auto;
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 26px 16px;
+}
+
+/* bottom composer */
+.composer-area { background: var(--bg); }
+.composer-wrap { margin: 0 auto; max-width: 680px; padding: 0 16px; }
+
+/* message text sizing (match design) */
+.msg-user { line-height: 1.9; font-size: 15px; }
+.asst .md { line-height: 2; font-size: 15px; }

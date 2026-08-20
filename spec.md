@@ -114,11 +114,14 @@ interfaces; no hard coupling to one browser API or vendor.
 
 ## 12. Retrieval & grounding requirements
 
-Hybrid retrieval is implemented (lexical + optional vector, RRF). The committed
-benchmark is **lexical-only** (no embeddings model configured; `embeddedCount:0`);
-the vector-only / hybrid / hybrid+rerank comparison is **not yet run** and
-requires an embeddings model — it is scoped as next-phase work, not claimed as
-measured. Answers are grounded only in retrieved evidence; unknown → say so.
+Hybrid retrieval is implemented (lexical + optional vector, RRF + rerank) and
+**benchmarked** (`benchmarks/retrieval/`, local `multilingual-e5-small`
+embeddings): the four modes were compared on the sourced eval cases — Recall@1
+lexical 43.8% → vector 52.1% → hybrid 56.3% → **hybrid+rerank 58.3%** (MRR 0.582
+→ 0.676). Hybrid+rerank is the strongest; the deployed default is lexical (zero
+infra) with hybrid available when an embeddings model is configured. The
+grounding-quality eval (`evals/`) remains lexical-only as shipped. Answers are
+grounded only in retrieved evidence; unknown → say so.
 
 ## 13. Citation behavior
 

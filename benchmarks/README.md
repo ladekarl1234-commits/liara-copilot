@@ -19,6 +19,35 @@ Writes `evals/results/retrieval-<date>.json`. Latest (61 cases, lexical-only
 lower bound): **hit@1 0.44 · hit@3 0.75 · hit@5 0.813 · MRR 0.595 · gate accuracy
 0.923**. The runner enforces floors (hit@5 ≥ 0.66, gate ≥ 0.75) via exit code.
 
+## Hybrid retrieval modes (local embeddings)
+
+```bash
+npm run benchmark:retrieval-modes   # resumable; re-run until it prints the table + writes JSON
+```
+
+Embeds every chunk once with a **local** multilingual model
+(`Xenova/multilingual-e5-small`, 384-d, Transformers.js — no API key), caches the
+vectors to `data/index/embeddings.json` (gitignored), then drives the shipped
+`search()` four ways via benchmark-only mode flags and scores the 48 sourced eval
+cases. Writes `benchmarks/retrieval/modes-<date>.json`.
+
+### Latest run (`modes-2026-08-20.json`)
+
+| Retrieval mode | Recall@1 | Recall@3 | Recall@5 | MRR | p50 | p95 |
+|---|---:|---:|---:|---:|---:|---:|
+| Lexical (BM25) | 43.8% | 72.9% | 77.1% | 0.582 | 15 ms | 38 ms |
+| Vector (cosine) | 52.1% | 72.9% | 79.2% | 0.629 | 13 ms | 22 ms |
+| Hybrid (RRF) | 56.3% | 77.1% | 79.2% | 0.661 | 25 ms | 55 ms |
+| Hybrid + rerank | **58.3%** | **77.1%** | **81.3%** | **0.676** | 28 ms | 54 ms |
+
+Reading: vector and lexical are complementary (hybrid > either alone on Recall@1
+and MRR), and the deterministic rerank boosts add a further lift — hybrid+rerank
+is the strongest on every metric. Recall/MRR are deterministic (fixed vectors +
+ranking); latency is a single in-process run (includes local query-embedding for
+the vector/hybrid rows) and varies run-to-run. The numbers describe the **local
+`multilingual-e5-small`** model — a different configured embeddings model would
+score differently. This is a retrieval-ranking benchmark, not an answer-quality one.
+
 ## Application load (mock LLM)
 
 ```bash

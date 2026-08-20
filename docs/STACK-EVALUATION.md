@@ -21,7 +21,7 @@ inference, and this is stated rather than dressed up as measurement.
 
 | Concern | In-process hybrid (chosen) | PostgreSQL + pgvector | MeiliSearch + vectors | Qdrant + lexical |
 |---|---|---|---|---|
-| Retrieval accuracy (this corpus) | **[M]** hit@5 0.813 · gate 0.923 (61 cases, lexical-only lower bound) | [I] comparable lexical (tsvector/trgm); vectors need a good Persian model | [I] strong lexical; Persian tokenization needs tuning | [I] strong vector; lexical is a bolt-on |
+| Retrieval accuracy (this corpus) | **[M]** hybrid+rerank Recall@1 58.3% vs lexical 43.8% (local e5 embeddings, `benchmarks/retrieval/`); grounding eval hit@5 0.813 · gate 0.923 lexical-only | [I] comparable lexical (tsvector/trgm); vectors need a good Persian model | [I] strong lexical; Persian tokenization needs tuning | [I] strong vector; lexical is a bolt-on |
 | Persian support | **[M]** custom normalization + synonym fold at index+query | [I] needs Persian FTS config/dictionaries | [I] good, config-dependent | [I] via embeddings only |
 | Retrieval latency | **[I]** in-process, no network hop (architectural; no isolated retrieval-latency benchmark committed — end-to-end mock chat p95 282 ms) | [I] + network + query planning | [I] + network round-trip | [I] + network round-trip |
 | Operational complexity | **[P/I]** none — JSON files loaded in-process | [I] a managed DB + migrations | [I] a second service to run/tune | [I] a second service to run/tune |

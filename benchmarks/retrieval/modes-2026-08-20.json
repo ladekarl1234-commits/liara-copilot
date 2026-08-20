@@ -1,0 +1,50 @@
+{
+  "date": "2026-08-20T17:04:36.395Z",
+  "commit": "253583cfad7dac48f55d1e3726737556f0f80b93",
+  "embeddingModel": "Xenova/multilingual-e5-small",
+  "dims": 384,
+  "sourcedCases": 48,
+  "note": "Local embeddings (Transformers.js, offline). Modes drive the shipped search() via mode flags; latency includes local query-embedding time for vector/hybrid.",
+  "modes": [
+    {
+      "mode": "lexical",
+      "n": 48,
+      "recall1": 0.4375,
+      "recall3": 0.7291666666666666,
+      "recall5": 0.7708333333333334,
+      "mrr": 0.5822916666666667,
+      "p50ms": 15,
+      "p95ms": 38
+    },
+    {
+      "mode": "vector",
+      "n": 48,
+      "recall1": 0.5208333333333334,
+      "recall3": 0.7291666666666666,
+      "recall5": 0.7916666666666666,
+      "mrr": 0.6291666666666667,
+      "p50ms": 13,
+      "p95ms": 22
+    },
+    {
+      "mode": "hybrid",
+      "n": 48,
+      "recall1": 0.5625,
+      "recall3": 0.7708333333333334,
+      "recall5": 0.7916666666666666,
+      "mrr": 0.6614583333333334,
+      "p50ms": 25,
+      "p95ms": 55
+    },
+    {
+      "mode": "hybrid+rerank",
+      "n": 48,
+      "recall1": 0.5833333333333334,
+      "recall3": 0.7708333333333334,
+      "recall5": 0.8125,
+      "mrr": 0.6760416666666668,
+      "p50ms": 28,
+      "p95ms": 54
+    }
+  ]
+}

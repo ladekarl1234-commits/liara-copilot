@@ -71,7 +71,18 @@ Measured, reproducible — **no fabricated numbers**.
 
 CI enforces floors (Recall@5 ≥ 0.66, gate ≥ 0.75) via exit code. Reproduce: `npm run benchmark:retrieval`.
 
-**Tests:** `186 passed / 19 files` (`npm test`) · typecheck clean · `npm run build` clean · `npm audit` **0 vulnerabilities**.
+**Hybrid retrieval modes** — the four retrieval strategies scored on the 48 sourced eval cases with a **local** multilingual embedding model (`Xenova/multilingual-e5-small`, 384-d, no API key), all driven through the shipped `search()`:
+
+| Retrieval mode | Recall@1 | Recall@3 | Recall@5 | MRR | p95 |
+|---|---:|---:|---:|---:|---:|
+| Lexical (BM25) | 43.8% | 72.9% | 77.1% | 0.582 | 38 ms |
+| Vector (cosine) | 52.1% | 72.9% | 79.2% | 0.629 | 22 ms |
+| Hybrid (RRF) | 56.3% | 77.1% | 79.2% | 0.661 | 55 ms |
+| **Hybrid + rerank** | **58.3%** | **77.1%** | **81.3%** | **0.676** | 54 ms |
+
+Hybrid + rerank (the shipped ranker, with embeddings enabled) lifts Recall@1 from 43.8% → 58.3% and MRR 0.582 → 0.676 over pure lexical — vector and lexical signals are complementary, and reranking adds a further gain. Recall/MRR are deterministic; p95 is a single in-process run (includes local query-embedding time). Numbers are **model-specific** (local `multilingual-e5-small`); a different configured embeddings model may score differently. Evidence: [`benchmarks/retrieval/`](benchmarks/retrieval/). Reproduce: `npm run benchmark:retrieval-modes`.
+
+**Tests:** `192 passed / 20 files` (`npm test`) · typecheck clean · `npm run build` clean · `npm audit --omit=dev` **0 production vulnerabilities** (the local-embedding benchmark tooling pulls dev-only advisories that never ship).
 
 ## ⚡ Performance (mock-LLM load test)
 
@@ -113,9 +124,10 @@ Runs **keyless** too (grounded source listings, Fix/Guide visible, zero model ca
 | Command | What |
 |---|---|
 | `npm run dev` / `build` / `start` | develop / production build / serve |
-| `npm test` · `npm run typecheck` | 186 tests · strict TS |
+| `npm test` · `npm run typecheck` | 192 tests · strict TS |
 | `npm run index` (`docs:sync` + `build-index`) | sync docs + build index (incremental, hash-based) |
-| `npm run benchmark:retrieval` | retrieval eval → `evals/results/` |
+| `npm run benchmark:retrieval` | retrieval eval (lexical) → `evals/results/` |
+| `npm run benchmark:retrieval-modes` | lexical vs vector vs hybrid vs hybrid+rerank (local embeddings) → `benchmarks/retrieval/` |
 | `npm run benchmark:load` | mock-LLM HTTP load test → `benchmarks/load/` |
 
 ## 🗂 Repository structure

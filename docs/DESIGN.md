@@ -150,3 +150,30 @@ used for network failures the server never got to report, and as the
 fallback if a server error code isn't recognized). Neither path ever shows a
 raw exception message or stack trace to the user — every user-facing string
 is one of the fixed, hand-written copies for its `ErrorCode`.
+
+## Redesign — imported "Liara Chat" design (Claude Design)
+
+The public UI was reskinned from a Claude Design project ("Liara chat interface
+design") while keeping the full functional pipeline (SSE, Soniox voice, Sources,
+workflow/troubleshooting, TTS, feedback). Ported elements:
+
+- **Palette:** a calmer teal accent (`--accent #149ec4`) with a green→cyan brand
+  gradient (`--g1 #7ce3a8` → `--g2 #38c6f4`) used on the send button, stage dot,
+  and ambient landing blobs. Full light + dark tokens.
+- **Theme:** a light/dark **toggle** (`useTheme`, top-inline-start), persisted to
+  `localStorage` and applied as `data-theme` on `<html>`; a no-flash inline
+  script in `layout.tsx` sets it before first paint. Default follows the OS.
+- **Font:** **Vazirmatn** via `next/font/google` (self-hosted → no external font
+  host, so the CSP is unchanged), weights 400/500/700/800.
+- **Landing:** brand logo (`public/liara-logo.jpg`) with a glow, headline
+  «دیگه لازم نیست، مستندات لیارا رو بخونی!», a rounded composer with a gradient
+  send button, four starter chips, and two blurred, slowly-floating gradient
+  blobs (motion respects `prefers-reduced-motion`).
+- **Chat:** a compact header (logo + brand + a «گفت‌وگوی جدید» reset that starts a
+  fresh session via `useChat().reset()`), the message log, and the bottom composer.
+- **Voice/mic** states and the **🔊 Listen** control are unchanged in behavior,
+  restyled to the new palette (recording mic pulses in the design's red).
+
+The `.dc.html` source was a self-contained mock (browser SpeechRecognition, a
+canned answer generator); only its **visual design** was adopted — the real app
+keeps Soniox STT, the grounded RAG pipeline, and all Phase-I features.

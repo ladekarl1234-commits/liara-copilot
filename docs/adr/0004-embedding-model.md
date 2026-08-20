@@ -30,8 +30,14 @@ lexical. The model string is configuration, not code.
 
 - Lexical-only eval (`retrieval-2026-08-20.json`) already meets floors (hit@5
   0.813 ≥ 0.66; gate 0.923 ≥ 0.75), so embeddings are an *upgrade*, not a
-  prerequisite — honest scoping rather than unmeasured model selection.
-- `embeddedCount: 0` in the shipped index meta makes the current mode explicit.
+  prerequisite.
+- **Measured upgrade** (`benchmarks/retrieval/`, local `multilingual-e5-small`):
+  adding the vector signal lifts Recall@1 from 43.8% (lexical) to 56.3% (hybrid)
+  and 58.3% (hybrid+rerank), MRR 0.582 → 0.676 on the sourced eval cases — the
+  model choice is now benchmarked, not assumed. `multilingual-e5-small` handles
+  Persian well and runs locally (384-d, no API key).
+- `embeddedCount: 0` in the shipped index meta makes the DEFAULT mode explicit
+  (lexical); hybrid is opt-in via `AI_EMBEDDINGS_MODEL`.
 
 ## Consequences
 

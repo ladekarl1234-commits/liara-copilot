@@ -89,10 +89,12 @@ case (weak evidence) up front.
 
 **Decision**: the index always builds lexically; embeddings are added only
 when `AI_EMBEDDINGS_MODEL` is configured, and hybrid fusion switches on
-automatically. The committed retrieval eval runs **lexical-only**; the eval
-harness (`scripts/evaluate.ts`) does not yet exercise the vector/hybrid mode, so
-hybrid quality is implemented but **not yet benchmarked** (needs an embeddings
-model). Scoped as next-phase work — see the roadmap.
+automatically. The grounding eval (`scripts/evaluate.ts`) runs **lexical-only**
+as shipped, but the four retrieval modes are now **benchmarked** with a local
+multilingual embedding model (`scripts/benchmark-retrieval-modes.ts`, D11):
+hybrid+rerank measurably beats lexical (Recall@1 58.3% vs 43.8%, MRR 0.676 vs
+0.582). The deployed default stays lexical (zero infra, zero latency); hybrid is
+one env var away and now justified by measurement, not assumption.
 **Why**: docs and queries are Persian; normalized lexical search over 1,142
 curated pages is a strong, zero-cost, zero-latency baseline. The prompt: "If a
 simpler local index produces equal or better evaluation results, use the
@@ -169,3 +171,29 @@ from the interface by design.
 - **No fabricated numbers:** every metric in README/docs is produced by a repo
   script (retrieval eval, load JSON) or a test count; alternatives not stood up
   are labelled inference, not measurement.
+
+## D11 — Hybrid retrieval benchmark with a local embedding model
+
+**Decision**: measure the amendment-required lexical / vector / hybrid /
+hybrid+rerank comparison using a **local** multilingual model
+(`Xenova/multilingual-e5-small`, 384-dim, Transformers.js) so it needs no API
+key. `scripts/benchmark-retrieval-modes.ts` embeds every chunk once (cached to
+`data/index/embeddings.json`, keyed by chunk hash), then drives the shipped
+`search()` four ways via new benchmark-only mode flags (`deps.mode` +
+`deps.rankOnly`, which never affect production paths) and scores Recall@1/3/5 +
+MRR + latency. `npm run benchmark:retrieval-modes`.
+
+- The mode flags are unit-tested with synthetic vectors (`tests/retrieval-modes.test.ts`).
+- Local WASM inference is slow (~150 ms/text) and crashes intermittently in this
+  sandbox, so embedding is **incremental + resumable** (persist after every
+  batch; a driver re-invokes until complete).
+- `@xenova/transformers` + `onnxruntime-node` are **devDependencies** (benchmark
+  tooling only): they pull dev-only transitive advisories that never ship —
+  `npm audit --omit=dev` on the production graph is 0.
+
+## D12 — UI redesign imported from a Claude Design project
+
+**Decision**: adopt the "Liara Chat" design (teal/gradient palette, Vazirmatn,
+light/dark toggle, gradient composer, landing blobs, new-conversation reset) on
+top of the existing functional components — see `docs/DESIGN.md`. The `.dc.html`
+mock logic was NOT used; the real Soniox/RAG pipeline is preserved.

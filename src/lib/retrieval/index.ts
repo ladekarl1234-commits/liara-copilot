@@ -124,6 +124,13 @@ const MAX_EVIDENCE_CHARS = 7000;
 export interface SearchDeps {
   embedQuery?: (texts: string[]) => Promise<number[][]>; // present when vector search enabled
   priorTurns?: number; // conversation depth — relaxes the all-stopword gate for follow-ups
+  /** benchmark only: gate which retrieval stages run. Omitted/undefined =
+   * production behavior (lexical on; vector on when embeddings present; rerank
+   * boosts on). Used by scripts/benchmark-retrieval-modes.ts to isolate modes. */
+  mode?: { lexical?: boolean; vector?: boolean; rerank?: boolean };
+  /** benchmark only: return the full fused ranking (skip evidence selection,
+   * dedup, and the confidence gate) so Recall@k can be scored on the raw list. */
+  rankOnly?: boolean;
 }
 
 export async function search(
@@ -153,7 +160,7 @@ export async function search(
 
   const filterFn = buildFilter(idx, filters);
   const expanded = expandQueries(qs);
-  for (const q of expanded) {
+  if (deps.mode?.lexical !== false) for (const q of expanded) {
     const qTokens = tokenizeFa(q);
     let results = idx.lexical.search(q, {
       boost: { title: 3, heading: 2 },
@@ -174,7 +181,7 @@ export async function search(
   }
 
   // vector lists
-  if (idx.vectors && deps.embedQuery) {
+  if (deps.mode?.vector !== false && idx.vectors && deps.embedQuery) {
     try {
       const embs = await deps.embedQuery(qs);
       for (const e of embs) add(vectorTopK(idx, e, CANDIDATES_PER_QUERY, filters));
@@ -193,32 +200,40 @@ export async function search(
   for (const [prod, triggerTokens] of Object.entries(NICHE_TRIGGER_TOKENS)) {
     if (filters.product === prod || [...triggerTokens].some((t) => qTokenSet.has(t))) nicheReferenced.add(prod);
   }
+  const rerank = deps.mode?.rerank !== false;
   const fused: ScoredChunk[] = [];
   for (const [id, base] of rrf) {
     const chunk = idx.byId.get(id);
     if (!chunk) continue;
     let score = base;
-    if (filters.platform && chunk.platform === filters.platform) score *= 1.25;
-    if (filters.product && chunk.product === filters.product) score *= 1.1;
-    // the user named the platform/product in the query itself
-    if (chunk.platform && qTokenSet.has(chunk.platform)) score *= 1.2;
-    // link-hub pages cite everything and answer nothing
-    if (/related-links\.md$/.test(chunk.sourcePath)) score *= 0.6;
-    // for a platform-less query, a framework-specific how-to is usually the
-    // wrong first hit — the general reference/overview page is canonical
-    if (!platformNamed && chunk.platform) score *= 0.85;
-    // niche product not referenced by the query → likely cross-product noise.
-    // A gentle penalty (not a burial) so a paraphrased need still surfaces the
-    // right product if lexical relevance is strong (RETR-001).
-    if (chunk.product in NICHE_TRIGGER_TOKENS && !nicheReferenced.has(chunk.product)) score *= 0.72;
-    // `/about` and `/overview/about` hub pages are broad; a concrete
-    // quick-start / how-to / details page answers better
-    if (/\/about\.md$/.test(chunk.sourcePath)) score *= 0.85;
-    if (/quick-start|quick-setup|getting-started|\/details\/|\/references\//.test(chunk.sourcePath)) score *= 1.08;
-    score *= headingBoost(chunk, qs);
+    if (rerank) {
+      if (filters.platform && chunk.platform === filters.platform) score *= 1.25;
+      if (filters.product && chunk.product === filters.product) score *= 1.1;
+      // the user named the platform/product in the query itself
+      if (chunk.platform && qTokenSet.has(chunk.platform)) score *= 1.2;
+      // link-hub pages cite everything and answer nothing
+      if (/related-links\.md$/.test(chunk.sourcePath)) score *= 0.6;
+      // for a platform-less query, a framework-specific how-to is usually the
+      // wrong first hit — the general reference/overview page is canonical
+      if (!platformNamed && chunk.platform) score *= 0.85;
+      // niche product not referenced by the query → likely cross-product noise.
+      // A gentle penalty (not a burial) so a paraphrased need still surfaces the
+      // right product if lexical relevance is strong (RETR-001).
+      if (chunk.product in NICHE_TRIGGER_TOKENS && !nicheReferenced.has(chunk.product)) score *= 0.72;
+      // `/about` and `/overview/about` hub pages are broad; a concrete
+      // quick-start / how-to / details page answers better
+      if (/\/about\.md$/.test(chunk.sourcePath)) score *= 0.85;
+      if (/quick-start|quick-setup|getting-started|\/details\/|\/references\//.test(chunk.sourcePath)) score *= 1.08;
+      score *= headingBoost(chunk, qs);
+    }
     fused.push({ chunk, score });
   }
   fused.sort((a, b) => b.score - a.score);
+
+  // benchmark: raw ranking (no evidence selection / gate) for Recall@k scoring
+  if (deps.rankOnly) {
+    return { chunks: fused.slice(0, 50), confidence: 'low', queries: qs, filters, latencyMs: Date.now() - t0 };
+  }
 
   // evidence selection: relative cutoff + char budget (enforced from chunk #1),
   // and DEDUP near-identical chunk bodies. Boilerplate sections (e.g. the
