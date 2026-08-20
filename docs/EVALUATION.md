@@ -37,12 +37,17 @@ configured for this run).
 
 | Metric | Value |
 |---|---|
-| hit@1 | 31.25% |
-| hit@3 | 62.5% |
-| hit@5 | 68.75% |
-| MRR | 0.4729 |
-| Gate accuracy | 9/9 (100%) |
-| Confidence distribution | medium 49, high 8, low 0 |
+| hit@1 | 33.3% |
+| hit@3 | 66.7% |
+| hit@5 | 70.8% |
+| MRR | 0.495 |
+| Gate accuracy | 7/9 (0.778), **strict** (see definition below) |
+| Confidence distribution | medium 39, low 15, high 3 |
+
+These numbers are from the **hardened** evidence gate (see the round-2 note
+below). The runner now enforces `hit@5 ≥ 0.6` and `gate-accuracy ≥ 0.75` as
+failing floors (`process.exitCode = 1`) — a retrieval regression fails the
+run instead of silently rewriting the results JSON.
 
 **Per category** (`n` = sourced cases in that category; gate categories show
 `gateN`/`gateOk` instead):
@@ -50,9 +55,9 @@ configured for this run).
 | Category | n | hit@1 | hit@3 | hit@5 | MRR | gate |
 |---|---|---|---|---|---|---|
 | ambiguous | — | — | — | — | — | 2/2 |
-| unsupported | — | — | — | — | — | 5/5 |
-| adversarial | — | — | — | — | — | 2/2 |
-| incorrect-assumption | 2 | 0% | 50% | 50% | 0.50 | — |
+| unsupported | — | — | — | — | — | 4/5 (strict low) |
+| adversarial | — | — | — | — | — | 1/2 (strict low) |
+| incorrect-assumption | 2 | 0% | 100% | 100% | 0.75 | — |
 | simple-factual | 4 | 25% | 75% | 75% | 0.50 | — |
 | database | 2 | 50% | 50% | 100% | 0.625 | — |
 | service-discovery | 2 | 50% | 50% | 50% | 0.50 | — |
@@ -69,6 +74,10 @@ configured for this run).
 | multi-hop | 2 | 50% | 100% | 100% | 0.75 | — |
 | cross-service | 3 | 0% | 67% | 67% | 0.33 | — |
 | domain-dns | 3 | 67% | 67% | 67% | 0.67 | — |
+
+(Sourced-case rows are indicative; a few shifted by ±1 case after the round-2
+ingest fix added 33 chunks. The committed `evals/results/retrieval-2026-08-20.json`
+is the source of truth — regenerate with `npm run evaluate:retrieval`.)
 
 This is a **lower bound**, stated honestly: it's a single raw-question
 lexical query with no filters. The live chat pipeline additionally does
@@ -110,13 +119,39 @@ exactly the ambiguity metadata filters from conversation state (product
 inferred from prior turns) are meant to resolve, and which this single-query,
 filter-less eval run doesn't exercise.
 
-## Gate accuracy definition
+## Gate accuracy definition (hardened, round 2)
 
-For the 9 cases with empty `expectedSources` (ambiguous, unsupported,
-adversarial), "correct" means `search()` does **not** return `confidence:
-'high'` — `medium` or `low` both count, since the gate's job for these
-questions is to withhold full confidence, not to hit a specific page. All 9
-pass. This is checked, not assumed: `perCase[].gateOk` in the results file.
+The first version asserted only "not `high`" for every gate case. Review
+proved that was true **by construction**: on the real corpus the pre-hardening
+gate returned `medium` for essentially every query (a hardcoded `return
+'medium'` would have scored 9/9 identically). The gate did not gate.
+
+The gate was rebuilt (`exactCoverage` over stopword-filtered informative
+tokens in `src/lib/retrieval/index.ts`; stopword list in
+`src/lib/text/persian.ts`) and the metric made **strict**:
+
+- **unsupported / adversarial** cases (5 + 2) MUST return `confidence: 'low'`
+  — the orchestrator refuses to answer on `low`. `!= high` no longer counts.
+- **ambiguous** cases (2) need only stay below `high` — the planner asks the
+  clarifying question.
+
+Current: **7/9**. The two misses (`crlf-bad-interpreter`,
+`adversarial-destructive`) carry genuine Liara vocabulary and land at
+informative-coverage 0.39 / 0.46 — **indistinguishable from 11 legitimate
+troubleshooting cases in the same band** (measured). A purely lexical gate
+cannot separate them without wrongly refusing those 11 answerable questions,
+so raising the threshold would trade 2 gate wins for 11 recall losses. Those
+two are defended **downstream**, not by retrieval:
+
+- `adversarial-destructive` ("script to delete another account's resources") →
+  the answer system prompt's safety rule refuses it (`prompts.ts` rule 9), and
+  no such cross-account destructive capability is documented.
+- `crlf-bad-interpreter` (a Docker CRLF-shebang error) → `medium` is the
+  honest signal (related Docker docs exist, the exact fix doesn't); the claim-
+  verification stage flags any unsupported specific claim.
+
+This is checked, not assumed: `perCase[].gateOk` in the results file, and the
+`GATE_MIN` floor fails the run below 0.75.
 
 ## Answers-mode design (LLM judge)
 

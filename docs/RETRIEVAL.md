@@ -135,30 +135,44 @@ match from being padded out with irrelevant filler.
 ## Gate thresholds (coverage / score-per-token / margin)
 
 `gateConfidence(resultCount, coverage, scorePerToken, margin)`
-(`src/lib/retrieval/index.ts`):
+(`src/lib/retrieval/index.ts`), where `coverage = exactCoverage(...)`:
 
 ```
-low    : no results, or coverage < 0.25, or scorePerToken < 4
-high   : coverage >= 0.6 AND scorePerToken >= 25 AND margin >= 1.05
-medium : everything else
+low    : no results, or coverage.ratio < 0.34 (with informative>0)
+high   : coverage.ratio >= 0.7 AND coverage.informative >= 2
+         AND scorePerToken >= 25 AND margin >= 1.05
+medium : everything else (incl. informative == 0 — a pure-stopword
+         follow-up, which the planner resolves)
 ```
 
-- **coverage** — fraction of the query's unique tokens that appear in the
-  top result's matched terms (BM25 term coverage).
-- **scorePerToken** — the top result's raw MiniSearch score divided by
-  unique query-token count (score density, not just raw magnitude).
-- **margin** — top fused score ÷ second fused score (how much the winner
-  stands out; `2` when there's only one result, `0` when there are none).
+- **coverage** (`exactCoverage`) — the fraction of a query's **informative**
+  tokens (stopwords removed: fa/en function words + domain-ubiquitous terms
+  like *liara*, *app*) that appear **verbatim** in the top-3 selected chunks.
+  Computed on the **original** queries only — never the synthetic EN→FA
+  expansion, whose short query would otherwise inflate the signal. Fuzzy and
+  prefix matches deliberately do **not** count: they are exactly what let an
+  off-topic query (a cake recipe) reach `medium` before the round-2 rebuild.
+  `informative` is that query's informative-token count (a 1-token match is
+  never enough for `high`).
+- **scorePerToken** — the top result's raw MiniSearch score ÷ unique
+  query-token count (density, not raw magnitude).
+- **margin** — top fused score ÷ second fused score.
 
-`low` blocks answering entirely (the orchestrator emits the honest
-"couldn't find this" message and records a documentation gap). `high`
-additionally routes the answer to the fast model and makes the answer
-eligible for the FAQ cache — deliberately the strictest tier. These
-thresholds were **not guessed**: they were tuned against `evals/cases` via
-`npm run evaluate:retrieval` so that every `ambiguous`/`unsupported`/
-`adversarial` case (9 of them) comes back `medium`, never `high` — the
-committed eval run shows gate accuracy **9/9**. See `docs/EVALUATION.md` for
-the full table and the actual missed cases.
+`low` blocks answering entirely (the orchestrator emits the honest "couldn't
+find this" message and records a documentation gap). `high` additionally
+routes to the fast model and makes the answer FAQ-cache-eligible —
+deliberately the strictest tier. Thresholds were tuned against `evals/cases`
+via `npm run evaluate:retrieval`; the runner **fails** (`exit 1`) if hit@5
+drops below 0.6 or gate-accuracy below 0.75, and requires
+`unsupported`/`adversarial` cases to gate `low` (not merely "not high" — that
+earlier definition was satisfied by a gate that never fired). Current gate
+accuracy: **7/9**, with the two vocabulary-carrying misses defended
+downstream — see `docs/EVALUATION.md` for the full analysis.
+
+> **Round-2 note.** The first gate counted fuzzy/prefix stopword matches and
+> thresholded on a corpus-scale-dependent raw BM25 score; adversarial review
+> proved it returned `medium` for every input on the real 3,663-chunk index,
+> including gibberish. The exact-coverage rebuild above is the fix.
 
 ## Citation mapping
 
