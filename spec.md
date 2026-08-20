@@ -114,8 +114,11 @@ interfaces; no hard coupling to one browser API or vendor.
 
 ## 12. Retrieval & grounding requirements
 
-Hybrid required; evaluated against lexical-only and (when embeddings configured)
-vector/rerank. Answers grounded only in retrieved evidence; unknown → say so.
+Hybrid retrieval is implemented (lexical + optional vector, RRF). The committed
+benchmark is **lexical-only** (no embeddings model configured; `embeddedCount:0`);
+the vector-only / hybrid / hybrid+rerank comparison is **not yet run** and
+requires an embeddings model — it is scoped as next-phase work, not claimed as
+measured. Answers are grounded only in retrieved evidence; unknown → say so.
 
 ## 13. Citation behavior
 

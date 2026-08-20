@@ -89,7 +89,10 @@ case (weak evidence) up front.
 
 **Decision**: the index always builds lexically; embeddings are added only
 when `AI_EMBEDDINGS_MODEL` is configured, and hybrid fusion switches on
-automatically. Retrieval evals run in both modes.
+automatically. The committed retrieval eval runs **lexical-only**; the eval
+harness (`scripts/evaluate.ts`) does not yet exercise the vector/hybrid mode, so
+hybrid quality is implemented but **not yet benchmarked** (needs an embeddings
+model). Scoped as next-phase work — see the roadmap.
 **Why**: docs and queries are Persian; normalized lexical search over 1,142
 curated pages is a strong, zero-cost, zero-latency baseline. The prompt: "If a
 simpler local index produces equal or better evaluation results, use the

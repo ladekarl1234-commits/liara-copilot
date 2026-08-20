@@ -23,7 +23,7 @@ inference, and this is stated rather than dressed up as measurement.
 |---|---|---|---|---|
 | Retrieval accuracy (this corpus) | **[M]** hit@5 0.813 · gate 0.923 (61 cases, lexical-only lower bound) | [I] comparable lexical (tsvector/trgm); vectors need a good Persian model | [I] strong lexical; Persian tokenization needs tuning | [I] strong vector; lexical is a bolt-on |
 | Persian support | **[M]** custom normalization + synonym fold at index+query | [I] needs Persian FTS config/dictionaries | [I] good, config-dependent | [I] via embeddings only |
-| p95 retrieval latency | **[M]** in-process, no network hop (see internal trace) | [I] + network + query planning | [I] + network round-trip | [I] + network round-trip |
+| Retrieval latency | **[I]** in-process, no network hop (architectural; no isolated retrieval-latency benchmark committed — end-to-end mock chat p95 282 ms) | [I] + network + query planning | [I] + network round-trip | [I] + network round-trip |
 | Operational complexity | **[P/I]** none — JSON files loaded in-process | [I] a managed DB + migrations | [I] a second service to run/tune | [I] a second service to run/tune |
 | Horizontal scalability | **[I]** read-only index per node; rebuilt out of band | [I] shared DB scales reads well | [I] scales as its own tier | [I] scales as its own tier |
 | Liara deployment fit | **[M]** one container, `output: standalone`, health 503-on-missing | [I] app + managed DB | [I] app + search service | [I] app + vector service |
@@ -69,7 +69,7 @@ The `search()` contract makes any of these a swap if evidence later favors it.
 npm run benchmark:retrieval   # writes evals/results/*.json (hit@k, MRR, gate)
 LLM_MOCK=on PORT=3100 npm start &         # mock LLM, no external calls
 BASE_URL=http://127.0.0.1:3100 npm run benchmark:load   # writes benchmarks/load/*.json
-npm test                                  # 183 unit/integration tests
+npm test                                  # 186 unit/integration tests
 ```
 
 ## Bottom line

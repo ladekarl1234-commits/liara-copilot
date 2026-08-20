@@ -33,56 +33,54 @@ Run committed at `evals/results/retrieval-2026-08-20.json`, lexical-only
 (`embeddedCount: 0` in `data/index/meta.json` — no embeddings model was
 configured for this run).
 
-**Overall** (48 sourced cases + 13 gate cases, after Phase-II round 1):
+**Overall** (61 cases: 48 sourced + 13 gate), lexical-only committed run:
 
 | Metric | Value |
 |---|---|
-| hit@1 | 42% |
-| hit@3 | 73% |
-| hit@5 | 79.2% |
-| MRR | 0.575 |
+| hit@1 | 44% |
+| hit@3 | 75% |
+| hit@5 | 81.3% |
+| MRR | 0.592 |
 | Gate accuracy | 12/13 (0.923), **strict** (see definition below) |
 
-Phase-II round 1 lifted retrieval materially (hit@5 0.708 → 0.792, hit@1 0.33
-→ 0.42) via a Persian synonym/concept fold, morphology-aware tokenization,
-evidence dedup, a title-anchored `high` tier, and niche-product down-ranking.
-Gate accuracy rose (0.778 → 0.923) after adding a deterministic prompt-injection
-/ malicious-request detector: adversarial cases (6/6) now refuse via the
-injection front door OR the evidence gate, measured as the real system
-decision rather than raw search confidence. The runner enforces `hit@5 ≥ 0.66`
-and `gate-accuracy ≥ 0.75` as failing floors (`process.exitCode = 1`) — a
-retrieval regression fails the
-run instead of silently rewriting the results JSON.
+Retrieval was lifted materially across the review rounds via a Persian
+synonym/concept fold, morphology-aware tokenization, evidence dedup, a
+title-anchored `high` tier, and niche-product down-ranking. Gate accuracy rose to
+0.923 after adding a deterministic prompt-injection / malicious-request detector:
+adversarial cases (6/6) refuse via the injection front door OR the evidence gate,
+measured as the real system decision rather than raw search confidence. The
+runner enforces `hit@5 ≥ 0.66` and `gate-accuracy ≥ 0.75` as failing floors
+(`process.exitCode = 1`) — a retrieval regression fails the run instead of
+silently rewriting the results JSON.
 
-**Per category** (`n` = sourced cases in that category; gate categories show
-`gateN`/`gateOk` instead):
+**Per category** (`n` = sourced cases; gate categories show `gateOk`/`gateN`),
+regenerated from the committed `evals/results/retrieval-2026-08-20.json`:
 
 | Category | n | hit@1 | hit@3 | hit@5 | MRR | gate |
 |---|---|---|---|---|---|---|
 | ambiguous | — | — | — | — | — | 2/2 |
-| unsupported | — | — | — | — | — | 4/5 (strict low) |
-| adversarial | — | — | — | — | — | 1/2 (strict low) |
-| incorrect-assumption | 2 | 0% | 100% | 100% | 0.75 | — |
-| simple-factual | 4 | 25% | 75% | 75% | 0.50 | — |
-| database | 2 | 50% | 50% | 100% | 0.625 | — |
+| unsupported | — | — | — | — | — | 4/5 |
+| adversarial | — | — | — | — | — | 6/6 |
+| incorrect-assumption | 2 | 0% | 100% | 100% | 0.42 | — |
+| simple-factual | 4 | 50% | 75% | 100% | 0.69 | — |
+| database | 2 | 50% | 100% | 100% | 0.67 | — |
 | service-discovery | 2 | 50% | 50% | 50% | 0.50 | — |
-| english | 3 | 33% | 67% | 67% | 0.44 | — |
-| how-to | 6 | 0% | 50% | 67% | 0.26 | — |
-| deployment-workflow | 2 | 50% | 50% | 100% | 0.625 | — |
-| platform-specific | 2 | 50% | 50% | 50% | 0.50 | — |
-| object-storage | 2 | 0% | 50% | 50% | 0.25 | — |
+| english | 3 | 33% | 33% | 33% | 0.33 | — |
+| how-to | 6 | 17% | 67% | 83% | 0.46 | — |
+| deployment-workflow | 2 | 50% | 100% | 100% | 0.75 | — |
+| platform-specific | 2 | 50% | 100% | 100% | 0.67 | — |
+| object-storage | 2 | 50% | 50% | 50% | 0.50 | — |
 | persian | 2 | 100% | 100% | 100% | 1.00 | — |
 | mixed | 2 | 0% | 50% | 50% | 0.25 | — |
-| ai-api | 2 | 0% | 0% | 0% | 0.00 | — |
+| ai-api | 2 | 0% | 0% | 50% | 0.13 | — |
 | troubleshooting | 6 | 67% | 67% | 67% | 0.67 | — |
-| error-log | 3 | 0% | 67% | 67% | 0.28 | — |
-| multi-hop | 2 | 50% | 100% | 100% | 0.75 | — |
-| cross-service | 3 | 0% | 67% | 67% | 0.33 | — |
-| domain-dns | 3 | 67% | 67% | 67% | 0.67 | — |
+| error-log | 3 | 0% | 100% | 100% | 0.44 | — |
+| multi-hop | 2 | 50% | 100% | 100% | 0.67 | — |
+| cross-service | 3 | 67% | 100% | 100% | 0.83 | — |
+| domain-dns | 3 | 100% | 100% | 100% | 1.00 | — |
 
-(Sourced-case rows are indicative; a few shifted by ±1 case after the round-2
-ingest fix added 33 chunks. The committed `evals/results/retrieval-2026-08-20.json`
-is the source of truth — regenerate with `npm run evaluate:retrieval`.)
+The committed `evals/results/retrieval-2026-08-20.json` is the source of truth —
+regenerate with `npm run evaluate:retrieval`.
 
 This is a **lower bound**, stated honestly: it's a single raw-question
 lexical query with no filters. The live chat pipeline additionally does

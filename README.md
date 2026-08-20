@@ -67,11 +67,11 @@ Measured, reproducible — **no fabricated numbers**.
 
 | Metric | Recall@1 | Recall@3 | Recall@5 | MRR | Gate accuracy |
 |---|---:|---:|---:|---:|---:|
-| Value | 0.44 | 0.75 | **0.813** | 0.595 | **0.923** |
+| Value | 0.44 | 0.75 | **0.813** | 0.592 | **0.923** |
 
 CI enforces floors (Recall@5 ≥ 0.66, gate ≥ 0.75) via exit code. Reproduce: `npm run benchmark:retrieval`.
 
-**Tests:** `183 passed / 18 files` (`npm test`) · typecheck clean · `npm run build` clean · `npm audit` **0 vulnerabilities**.
+**Tests:** `186 passed / 19 files` (`npm test`) · typecheck clean · `npm run build` clean · `npm audit` **0 vulnerabilities**.
 
 ## ⚡ Performance (mock-LLM load test)
 
@@ -113,7 +113,7 @@ Runs **keyless** too (grounded source listings, Fix/Guide visible, zero model ca
 | Command | What |
 |---|---|
 | `npm run dev` / `build` / `start` | develop / production build / serve |
-| `npm test` · `npm run typecheck` | 183 tests · strict TS |
+| `npm test` · `npm run typecheck` | 186 tests · strict TS |
 | `npm run index` (`docs:sync` + `build-index`) | sync docs + build index (incremental, hash-based) |
 | `npm run benchmark:retrieval` | retrieval eval → `evals/results/` |
 | `npm run benchmark:load` | mock-LLM HTTP load test → `benchmarks/load/` |

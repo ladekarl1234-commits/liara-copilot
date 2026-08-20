@@ -36,8 +36,10 @@ The answer must refuse when evidence is insufficient rather than fabricate.
 ## Evidence
 
 - `evals/results/retrieval-2026-08-20.json`: hit@1 0.44 · hit@3 0.75 · hit@5
-  0.813 · MRR 0.595 · gate accuracy 0.923 (lexical-only lower bound).
-- Retrieval latency is in-process (no network); p-values in the internal trace.
+  0.813 · MRR 0.592 · gate accuracy 0.923 (lexical-only lower bound).
+- Retrieval runs in-process (no network hop) — an architectural property; no
+  isolated retrieval-latency benchmark is committed. The dev trace
+  (`/internal`) shows per-request retrieval latency at runtime.
 
 ## Consequences
 

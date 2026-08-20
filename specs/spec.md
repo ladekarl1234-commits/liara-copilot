@@ -152,4 +152,5 @@ A1. `public/llms/**/*.md` is a clean, official, LLM-ready source (verified in
 A2. An OpenAI-compatible endpoint + key is supplied via env at runtime; the app
     degrades gracefully (clear error + retrieval-only sources) without one.
 A3. Docs are Persian; Persian-normalized lexical search is a strong baseline;
-    vector search optional and benchmarked, not assumed.
+    vector search is optional and benchmarkable once an embeddings model is
+    configured — not yet benchmarked, and not assumed.
