@@ -34,5 +34,10 @@
     "tsx": "^4.20.0",
     "typescript": "^5.8.0",
     "vitest": "^3.2.0"
+  },
+  "_overrides_note": "pin patched transitive deps without the Next 16 major bump; sharp is unreachable (no next/image), postcss is build-time only",
+  "overrides": {
+    "postcss": "8.5.26",
+    "sharp": "^0.35.0"
   }
 }

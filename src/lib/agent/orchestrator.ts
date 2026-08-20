@@ -170,22 +170,21 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     modelRoute = route.label + ':' + route.model;
     const tModel = Date.now();
     let answer = '';
-    const stream = provider.generateStream({
-      model: route.model,
-      messages: [
-        { role: 'system', content: answerSystemPrompt(session, retrieval.chunks) },
-        { role: 'user', content: `<user_data>\n${sanitizeFences(message)}\n</user_data>` },
-      ],
-      maxTokens: 1400,
-      temperature: 0.2,
-      signal,
-    });
+    const answerMessages = [
+      { role: 'system' as const, content: answerSystemPrompt(session, retrieval.chunks) },
+      { role: 'user' as const, content: `<user_data>\n${sanitizeFences(message)}\n</user_data>` },
+    ];
+    const stream = provider.generateStream({ model: route.model, messages: answerMessages, maxTokens: 1400, temperature: 0.2, signal });
     for await (const delta of stream) {
       answer += delta;
       emit({ type: 'delta', text: delta });
     }
     modelLatencyMs = Date.now() - tModel;
-    usage = addUsage(usage, { inputTokens: 0, outputTokens: Math.ceil(answer.length / 4) });
+    // The streaming API returns no usage object, so estimate BOTH sides from the
+    // real prompt + completion length (was inputTokens:0 — the answer call sends
+    // the biggest prompt of the request, so cost/token metrics were badly wrong).
+    const answerInputTokens = Math.ceil(answerMessages.reduce((n, m) => n + m.content.length, 0) / 4);
+    usage = addUsage(usage, { inputTokens: answerInputTokens, outputTokens: Math.ceil(answer.length / 4) });
 
     const citations = citationsFromAnswer(answer, retrieval.chunks);
     emit({ type: 'citations', citations });

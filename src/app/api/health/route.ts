@@ -12,10 +12,17 @@ export async function GET() {
   } catch {
     // IndexMissingError (or unreadable index) -> degraded, still alive
   }
-  return NextResponse.json({
-    status: index.loaded ? 'ok' : 'degraded',
-    index,
-    aiConfigured: config().aiConfigured,
-    version: '0.1.0',
-  });
+  // The index is REQUIRED to answer anything — if it failed to load the app is
+  // genuinely broken, so return 503 to fail an LB/orchestrator healthcheck
+  // (DEPLOY-005/REL-005). Keyless mode (index ok, no AI key) is still a healthy
+  // 200: it degrades to grounded source listings, which is intentional.
+  return NextResponse.json(
+    {
+      status: index.loaded ? 'ok' : 'degraded',
+      index,
+      aiConfigured: config().aiConfigured,
+      version: '0.1.0',
+    },
+    { status: index.loaded ? 200 : 503 },
+  );
 }

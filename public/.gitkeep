@@ -1,0 +1,1 @@
+# Next.js standalone output copies public/ into the runner image; keep it tracked so the Docker COPY never fails on a fresh checkout (DEPLOY-001).

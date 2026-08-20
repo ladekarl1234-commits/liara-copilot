@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  // pin the tracing root to this project so the standalone server.js lands at
+  // .next/standalone/server.js — otherwise Next infers a parent monorepo root
+  // (here the OneDrive path) and the Docker `CMD node server.js` breaks (DEPLOY-004)
+  outputFileTracingRoot: import.meta.dirname,
   poweredByHeader: false,
   async headers() {
     return [

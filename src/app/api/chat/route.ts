@@ -50,10 +50,11 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   log('info', 'chat_request', {
     requestId,
-    ip,
-    // never log the raw session id — it is the only session credential
-    // 12-char prefix matches the hash length in request_metrics so the two log
-    // lines can be equality-joined by session
+    // hash the client IP (PII) — a hash still lets ops correlate/rate-diagnose
+    // a single client without storing the raw address (OBS-002)
+    ipHash: crypto.createHash('sha256').update(ip).digest('hex').slice(0, 12),
+    // never log the raw session id — it is the only session credential;
+    // 12-char prefix matches the hash length in request_metrics for joins
     session: body.sessionId ? crypto.createHash('sha256').update(body.sessionId).digest('hex').slice(0, 12) : 'new',
     chars: body.message.length,
   });

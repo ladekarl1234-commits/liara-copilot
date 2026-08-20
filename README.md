@@ -139,11 +139,11 @@ configured at eval time).
 
 | Metric | Value |
 |---|---|
-| hit@1 | 31% |
-| hit@3 | 63% |
-| hit@5 | 68.8% |
-| MRR | 0.473 |
-| Gate accuracy | 9/9 — no ambiguous/unsupported/adversarial case returns `high` confidence |
+| hit@1 | 42% |
+| hit@3 | 73% |
+| hit@5 | 79.2% |
+| MRR | 0.575 |
+| Gate accuracy | 12/13 (0.923) — unsupported/adversarial cases refuse (evidence gate `low` or the deterministic injection detector); only one accepted-debt case (`crlf-bad-interpreter`) |
 
 This is a **lower bound**: it queries the raw question once with no filters.
 The live chat pipeline additionally does bounded LLM query rewriting (≤3
@@ -159,9 +159,9 @@ Answer-quality eval (LLM-judged, `scripts/evaluate.ts --answers`) is
 implemented but **not yet run** — it requires a configured AI provider key
 for the judge model and a running server.
 
-Tests: **81 passing** (`vitest run`, 9 files). `npm run build` succeeds
-cleanly. Keyless mode returns honest sources-only answers (see above), tested
-in `tests/orchestrator.test.ts`.
+Tests: **149 passing** (`vitest run`, 15 files). `npm run build` succeeds
+cleanly; `npm audit` reports 0 vulnerabilities. Keyless mode returns honest
+sources-only answers (see above), tested in `tests/orchestrator.test.ts`.
 
 ## Production build & Docker
 

@@ -33,20 +33,25 @@ Run committed at `evals/results/retrieval-2026-08-20.json`, lexical-only
 (`embeddedCount: 0` in `data/index/meta.json` — no embeddings model was
 configured for this run).
 
-**Overall** (48 sourced cases + 9 gate cases):
+**Overall** (48 sourced cases + 13 gate cases, after Phase-II round 1):
 
 | Metric | Value |
 |---|---|
-| hit@1 | 33.3% |
-| hit@3 | 66.7% |
-| hit@5 | 70.8% |
-| MRR | 0.495 |
-| Gate accuracy | 7/9 (0.778), **strict** (see definition below) |
-| Confidence distribution | medium 39, low 15, high 3 |
+| hit@1 | 42% |
+| hit@3 | 73% |
+| hit@5 | 79.2% |
+| MRR | 0.575 |
+| Gate accuracy | 12/13 (0.923), **strict** (see definition below) |
 
-These numbers are from the **hardened** evidence gate (see the round-2 note
-below). The runner now enforces `hit@5 ≥ 0.6` and `gate-accuracy ≥ 0.75` as
-failing floors (`process.exitCode = 1`) — a retrieval regression fails the
+Phase-II round 1 lifted retrieval materially (hit@5 0.708 → 0.792, hit@1 0.33
+→ 0.42) via a Persian synonym/concept fold, morphology-aware tokenization,
+evidence dedup, a title-anchored `high` tier, and niche-product down-ranking.
+Gate accuracy rose (0.778 → 0.923) after adding a deterministic prompt-injection
+/ malicious-request detector: adversarial cases (6/6) now refuse via the
+injection front door OR the evidence gate, measured as the real system
+decision rather than raw search confidence. The runner enforces `hit@5 ≥ 0.66`
+and `gate-accuracy ≥ 0.75` as failing floors (`process.exitCode = 1`) — a
+retrieval regression fails the
 run instead of silently rewriting the results JSON.
 
 **Per category** (`n` = sourced cases in that category; gate categories show
