@@ -26,18 +26,35 @@ describe('normalizeFa', () => {
 });
 
 describe('tokenizeFa', () => {
-  it('emits joined form for ZWNJ words plus parts', () => {
+  it('emits the real morphemes for a pure-Persian ZWNJ word (no joined non-word)', () => {
+    // پیش‌فرض → parts پیش + فرض. The joined "پیشفرض" is NOT emitted for
+    // pure-Persian words (it only inflated coverage); the same parts are
+    // produced at index time so a doc using "پیش‌فرض" still matches.
     const toks = tokenizeFa('پیش‌فرض');
-    expect(toks).toContain('پیشفرض');
     expect(toks).toContain('پیش');
     expect(toks).toContain('فرض');
+    expect(toks).not.toContain('پیشفرض');
   });
 
-  it('splits DATABASE_URL into joined + parts', () => {
+  it('splits DATABASE_URL into joined identifier + parts (with synonym fold)', () => {
     const toks = tokenizeFa('DATABASE_URL');
-    expect(toks).toContain('databaseurl');
-    expect(toks).toContain('database');
+    expect(toks).toContain('databaseurl'); // exact identifier preserved
+    expect(toks).toContain('دیتابیس'); // "database" folds to the canonical Persian concept
     expect(toks).toContain('url');
+  });
+
+  it('folds connect-family synonyms to a canonical token', () => {
+    // وصل / متصل / اتصال all mean "connect" — folded so they match each other
+    expect(tokenizeFa('وصل')).toContain('اتصال');
+    expect(tokenizeFa('متصل')).toContain('اتصال');
+    expect(tokenizeFa('connect')).toContain('اتصال');
+  });
+
+  it('never resolves an inherited Object key to a non-string token', () => {
+    // 'constructor'/'toString' appear in JS code blocks — must stay strings
+    for (const t of tokenizeFa('constructor toString hasOwnProperty')) {
+      expect(typeof t).toBe('string');
+    }
   });
 
   it('splits next.js into joined + parts', () => {

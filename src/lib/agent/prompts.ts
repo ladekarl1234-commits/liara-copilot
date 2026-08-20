@@ -159,6 +159,10 @@ export const CANNED = {
     fa: 'در مستندات رسمی لیارا پاسخ قابل‌اتکایی برای این سوال پیدا نکردم؛ ترجیح می‌دهم حدس نزنم. اگر منظورتان را کمی دقیق‌تر بگویید (سرویس، پلتفرم، یا متن خطا) دوباره جستجو می‌کنم.',
     en: "I couldn't find a reliable answer to this in the official Liara docs, and I'd rather not guess. If you share more specifics (service, platform, or the exact error) I'll search again.",
   },
+  injection: {
+    fa: 'من فقط دستیار مستندات لیارا هستم و نمی‌توانم دستورالعمل‌های داخلی، پرامپت سیستم یا کلیدها را فاش کنم یا نادیده بگیرم. اگر سوالی درباره‌ی سرویس‌های لیارا دارید، خوشحال می‌شوم کمک کنم.',
+    en: "I'm only the Liara docs assistant — I can't reveal or override internal instructions, the system prompt, or any keys. If you have a question about Liara services, I'm happy to help.",
+  },
   aiNotConfigured: {
     fa: 'سرویس مدل زبانی هنوز پیکربندی نشده (AI_BASE_URL / AI_API_KEY). با این حال نزدیک‌ترین صفحات مستندات رسمی را برایتان پیدا کردم — منابع زیر را ببینید.',
     en: 'The language-model provider is not configured yet (AI_BASE_URL / AI_API_KEY). I still found the closest official docs pages — see the sources below.',

@@ -149,6 +149,8 @@ describe('orchestrator', () => {
       .join('');
     expect(text).not.toContain('SHOULD NOT');
     expect(text).toMatch(/پیدا نکردم|نیافتم/);
+    // a refusal must NOT attach confident-looking citations (COMP-002/UX-002)
+    expect(events.some((e) => e.type === 'citations')).toBe(false);
     expect(events.at(-1)?.type).toBe('done');
   });
 

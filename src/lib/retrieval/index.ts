@@ -6,10 +6,27 @@ import fs from 'node:fs';
 import path from 'node:path';
 import MiniSearch, { type Options as MiniOptions, type SearchResult } from 'minisearch';
 import type { DocChunk, RetrievalFilters, RetrievalResult, ScoredChunk } from '@/types';
-import { tokenizeFa, informativeTokens } from '@/lib/text/persian';
+import { tokenizeFa, informativeTokens, normalizeFa } from '@/lib/text/persian';
+
+const KNOWN_PLATFORMS = new Set([
+  'nextjs', 'nodejs', 'react', 'vue', 'angular', 'django', 'flask', 'laravel',
+  'php', 'python', 'dotnet', 'go', 'docker', 'static',
+]);
+
+// Niche products and the (post-canon) query tokens that legitimately invoke
+// them. A query lacking these should not surface the product's pages — a plain
+// "deploy my project" must not resolve to an AI FAQ or a package-mirror page.
+const NICHE_PRODUCT_TRIGGERS: Record<string, string[]> = {
+  ai: ['ai', 'هوش', 'مصنوعی', 'مدل', 'llm', 'چتبات', 'openai', 'embedding', 'prompt'],
+  mirrors: ['میرور', 'mirror', 'npm', 'pip', 'apt', 'docker', 'مخزن'],
+  'email-server': ['ایمیل', 'email', 'smtp', 'imap', 'pop3', 'mail'],
+  iaas: ['سرور', 'مجازی', 'vps', 'iaas', 'ubuntu', 'debian', 'وی‌پی‌اس'],
+  'object-storage': ['باکت', 'bucket', 'storage', 's3', 'آبجکت', 'ذخیره'],
+  'dns-management-system': ['dns', 'رکورد', 'نیم‌سرور', 'nameserver'],
+};
 import { config } from '@/lib/config';
 
-export const LEXICAL_VERSION = 2; // bump when miniOptions/tokenization change
+export const LEXICAL_VERSION = 3; // bump when miniOptions/tokenization change
 
 export function miniOptions(): MiniOptions {
   return {
@@ -161,6 +178,14 @@ export async function search(
 
   // fuse + deterministic boosts
   const qTokenSet = new Set(qs.flatMap(tokenizeFa));
+  const platformNamed = Boolean(filters.platform) || [...qTokenSet].some((t) => KNOWN_PLATFORMS.has(t));
+  // Niche products should not top a GENERAL query (a bare "deploy my project"
+  // must not resolve to an /ai/faq page). Down-rank a niche product's chunks
+  // unless the query references that product or the filter selects it.
+  const nicheReferenced = new Set<string>();
+  for (const [prod, triggers] of Object.entries(NICHE_PRODUCT_TRIGGERS)) {
+    if (filters.product === prod || triggers.some((t) => qTokenSet.has(t))) nicheReferenced.add(prod);
+  }
   const fused: ScoredChunk[] = [];
   for (const [id, base] of rrf) {
     const chunk = idx.byId.get(id);
@@ -172,19 +197,35 @@ export async function search(
     if (chunk.platform && qTokenSet.has(chunk.platform)) score *= 1.2;
     // link-hub pages cite everything and answer nothing
     if (/related-links\.md$/.test(chunk.sourcePath)) score *= 0.6;
+    // for a platform-less query, a framework-specific how-to is usually the
+    // wrong first hit — the general reference/overview page is canonical
+    if (!platformNamed && chunk.platform) score *= 0.85;
+    // niche product not referenced by the query → it is cross-product noise
+    if (chunk.product in NICHE_PRODUCT_TRIGGERS && !nicheReferenced.has(chunk.product)) score *= 0.55;
+    // `/about` and `/overview/about` hub pages are broad; a concrete
+    // quick-start / how-to / details page answers better
+    if (/\/about\.md$/.test(chunk.sourcePath)) score *= 0.85;
+    if (/quick-start|quick-setup|getting-started|\/details\/|\/references\//.test(chunk.sourcePath)) score *= 1.08;
     score *= headingBoost(chunk, qs);
     fused.push({ chunk, score });
   }
   fused.sort((a, b) => b.score - a.score);
 
-  // evidence selection: relative cutoff + char budget (enforced from chunk #1)
+  // evidence selection: relative cutoff + char budget (enforced from chunk #1),
+  // and DEDUP near-identical chunk bodies. Boilerplate sections (e.g. the
+  // byte-identical "## اتصال به مدل" copied across every AI-provider page) were
+  // filling all 8 evidence slots with 2 unique texts.
   const top = fused[0]?.score ?? 0;
   const selected: ScoredChunk[] = [];
+  const seenBodies = new Set<string>();
   let chars = 0;
   for (const s of fused) {
     if (selected.length >= MAX_EVIDENCE_CHUNKS) break;
     if (s.score < top * 0.35) break;
+    const bodyKey = normalizeFa(s.chunk.text).replace(/\s+/g, ' ').trim().slice(0, 400);
+    if (seenBodies.has(bodyKey)) continue; // duplicate/near-identical body
     if (chars + s.chunk.text.length > MAX_EVIDENCE_CHARS && selected.length >= 1) break;
+    seenBodies.add(bodyKey);
     selected.push(s);
     chars += s.chunk.text.length;
   }
@@ -194,11 +235,17 @@ export async function search(
   // count — they are what let a cake recipe reach 'medium' before.
   const coverage = exactCoverage(qs, selected.slice(0, 3));
 
+  // `high` also requires the TOP chunk's title/heading (not just its body) to
+  // carry an informative query token. Corpus-ubiquitous body tokens ("install",
+  // "cli", "دیتابیس") otherwise saturate coverage on the wrong page — e.g.
+  // "install the CLI" reached high on liara.json rather than /references/cli/install.
+  const topTitleMatch = selected.length ? headingCarriesQueryToken(selected[0].chunk, qs) : false;
+
   // ponytail: heuristic confidence gate (informative-token coverage + BM25
-  // strength + fusion margin), thresholds tuned on evals/cases via
+  // strength + fusion margin + title match), thresholds tuned on evals/cases via
   // `npm run evaluate:retrieval`; upgrade to a learned gate if eval demands it.
   const margin = fused.length > 1 ? fused[0].score / fused[1].score : fused.length ? 2 : 0;
-  const confidence = gateConfidence(fused.length, coverage, bestScorePerToken, margin, deps.priorTurns ?? 0);
+  const confidence = gateConfidence(fused.length, coverage, bestScorePerToken, margin, deps.priorTurns ?? 0, topTitleMatch);
 
   return {
     chunks: selected,
@@ -264,6 +311,7 @@ export function gateConfidence(
   scorePerToken: number,
   margin: number,
   priorTurns = 0,
+  topTitleMatch = true,
 ): RetrievalResult['confidence'] {
   if (!resultCount) return 'low';
   // Nothing matched. Relax to 'medium' ONLY for a pure-stopword follow-up
@@ -273,8 +321,28 @@ export function gateConfidence(
   // otherwise turn 1 onward would answer it.
   if (coverage.matched === 0) return coverage.informative === 0 && priorTurns > 0 ? 'medium' : 'low';
   if (coverage.ratio < 0.34) return 'low';
-  if (coverage.ratio >= 0.7 && coverage.informative >= 2 && scorePerToken >= 25 && margin >= 1.05) return 'high';
+  if (
+    topTitleMatch &&
+    coverage.ratio >= 0.7 &&
+    coverage.informative >= 2 &&
+    scorePerToken >= 25 &&
+    margin >= 1.05
+  )
+    return 'high';
   return 'medium';
+}
+
+// Tokens so common across the corpus that a title carrying one tells us
+// nothing about whether the page ANSWERS the query (every /references/cli/*
+// page has "cli" in a heading). Excluded from the high-gate title check.
+const GENERIC_TITLE_TOKENS = new Set(['cli', 'install', 'setup', 'app', 'liara', 'json', 'file', 'فایل', 'ساخت']);
+
+/** True when the chunk's title/heading shares a NON-generic informative token with any query. */
+export function headingCarriesQueryToken(chunk: DocChunk, queries: string[]): boolean {
+  const head = new Set(tokenizeFa(`${chunk.title} ${chunk.heading ?? ''}`));
+  return queries.some((q) =>
+    informativeTokens(q).some((t) => !GENERIC_TITLE_TOKENS.has(t) && head.has(t)),
+  );
 }
 
 function round3(n: number): number {

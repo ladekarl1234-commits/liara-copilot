@@ -123,6 +123,20 @@ describe('search gate (fixture)', () => {
   // certified against the REAL index in tests/integration-realindex.test.ts —
   // on a tiny fixture the `< 5 results` cross-product fallback (by design)
   // re-admits filtered-out chunks, which would mask the assertion.
+  it('deduplicates near-identical chunk bodies in the evidence set', async () => {
+    const dupText = 'برای اتصال به مدل هوش مصنوعی از baseURL و apiKey استفاده کنید و درخواست بزنید';
+    const chunks = [1, 2, 3, 4].map((n) =>
+      chunk({ id: `dup${n}`, product: 'ai', title: `ارائه‌دهنده ${n}`, heading: 'اتصال به مدل', text: dupText }),
+    );
+    chunks.push(chunk({ id: 'uniq', product: 'ai', title: 'قیمت', heading: 'هزینه', text: 'هزینه‌ی مدل هوش مصنوعی بر اساس مصرف توکن محاسبه می‌شود' }));
+    const lexical = new MiniSearch(miniOptions());
+    lexical.addAll(chunks as unknown as Record<string, unknown>[]);
+    const idx: LoadedIndex = { chunks, byId: new Map(chunks.map((c) => [c.id, c])), lexical, vectors: null, meta: { builtAt: 't', chunkCount: chunks.length, anchorCoverage: 0, lexicalVersion: 2 } };
+    const r = await search(['اتصال به مدل هوش مصنوعی'], {}, {}, idx);
+    const bodies = r.chunks.map((s) => s.chunk.text);
+    expect(new Set(bodies).size).toBe(bodies.length); // no duplicate bodies survive selection
+  });
+
   it('empty-string filters do not build an always-true predicate', async () => {
     const r = await search(['استقرار NextJS'], { product: '', platform: '  ' } as never, {}, fixture());
     expect(r.chunks.length).toBeGreaterThan(0);

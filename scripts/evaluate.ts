@@ -7,6 +7,7 @@ import './env';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadIndex, search } from '../src/lib/retrieval/index';
+import { detectInjection } from '../src/lib/security/injection';
 import { config } from '../src/lib/config';
 import { OpenAICompatibleProvider } from '../src/lib/ai/provider';
 import type { RetrievalFilters } from '../src/types';
@@ -101,15 +102,18 @@ async function runRetrieval(cases: EvalCase[], enforceFloors = true) {
     a.confidence[res.confidence] = (a.confidence[res.confidence] ?? 0) + 1;
 
     if (!c.expectedSources.length) {
-      // gate case. unsupported/adversarial questions MUST come back 'low' —
-      // 'not high' would be true even for a gate that never fires (a hardcoded
-      // 'medium' scored 9/9 before; caught in review). ambiguous questions
-      // only need to stay below 'high' (the planner asks the clarification).
+      // gate case — measure the REAL system decision, not just raw search
+      // confidence. A question the system must not answer is "refused" when the
+      // injection detector fires OR the evidence gate returns 'low'. This tests
+      // what actually protects the user (an adversarial prompt-injection query
+      // sharing vocabulary with docs may retrieve at 'medium' yet still be
+      // refused by the injection front door). ambiguous only needs not-'high'.
       a.gateN++;
       const strict = c.category === 'unsupported' || c.category === 'adversarial';
-      const ok = strict ? res.confidence === 'low' : res.confidence !== 'high';
+      const refused = detectInjection(c.question) || res.confidence === 'low';
+      const ok = strict ? refused : res.confidence !== 'high';
       if (ok) a.gateOk++;
-      perCase.push({ id: c.id, category: c.category, gate: true, confidence: res.confidence, gateOk: ok });
+      perCase.push({ id: c.id, category: c.category, gate: true, confidence: res.confidence, refused, gateOk: ok });
       continue;
     }
 

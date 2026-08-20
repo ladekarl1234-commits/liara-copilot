@@ -71,6 +71,28 @@ d('real index: evidence gate', () => {
     }
   });
 
+  it('the landing example chips all retrieve answerable evidence (no refusal)', async () => {
+    const idx = loadIndex(INDEX_DIR);
+    const chips = [
+      'می‌خواهم پروژه‌ام را روی لیارا مستقر کنم؛ از کجا شروع کنم؟',
+      'برنامه‌ام روی لیارا به خطا خورده و می‌خواهم علتش را پیدا و رفع کنم.',
+      'چطور برنامه‌ام را به دیتابیس روی لیارا متصل کنم؟',
+      'چطور دامنه‌ی اختصاصی خودم را به برنامه‌ام روی لیارا وصل کنم؟',
+    ];
+    for (const q of chips) {
+      const r = await search([q], {}, {}, idx);
+      expect(r.confidence, `chip "${q.slice(0, 20)}" must not refuse`).not.toBe('low');
+    }
+  });
+
+  it('a general "deploy my project" query does not surface a niche AI/mirror page first', async () => {
+    const idx = loadIndex(INDEX_DIR);
+    const r = await search(['می‌خواهم پروژه‌ام را روی لیارا مستقر کنم'], {}, {}, idx);
+    const top = r.chunks[0]?.chunk;
+    expect(top?.product).not.toBe('ai');
+    expect(top?.product).not.toBe('mirrors');
+  });
+
   it('applies the product filter independently of platform (no cross-product leak at real scale)', async () => {
     // enough dbaas/postgresql chunks exist that the <5 fallback never fires,
     // so the product filter is the only thing selecting results
@@ -87,7 +109,7 @@ d('real index: FAQ cache is a zero-model-call path', () => {
       if (sys.includes('grounding checker')) return { text: '{"unsupported":[],"note":""}', usage: { inputTokens: 1, outputTokens: 1 } };
       onCall();
       return {
-        text: JSON.stringify({ intent: 'question', language: 'fa', action: 'answer', statePatch: {}, retrievalQueries: ['استقرار برنامه Next.js'], filters: { platform: 'nextjs' } }),
+        text: JSON.stringify({ intent: 'question', language: 'fa', action: 'answer', statePatch: {}, retrievalQueries: ['چطور متغیرهای محیطی در Next.js تنظیم کنم'], filters: { platform: 'nextjs' } }),
         usage: { inputTokens: 5, outputTokens: 5 },
       };
     },
@@ -126,9 +148,9 @@ d('real index: FAQ cache is a zero-model-call path', () => {
   }
 
   it('caches a high-confidence first-turn answer and replays it with no model calls', async () => {
-    // Sanity: this query must reach 'high' on the real corpus, else the cache
-    // is never written and the test would be vacuous.
-    const q = 'I have a Next.js application. How do I deploy it?';
+    // Sanity: this query must reach 'high' on the real corpus (a single
+    // dominant page), else the cache is never written and the test is vacuous.
+    const q = 'چطور متغیرهای محیطی در Next.js تنظیم کنم';
     const probe = await search([q], { platform: 'nextjs' }, {}, loadIndex(INDEX_DIR));
     expect(probe.confidence).toBe('high');
 

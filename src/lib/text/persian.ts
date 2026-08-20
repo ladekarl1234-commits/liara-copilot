@@ -22,6 +22,42 @@ export function normalizeFa(input: string): string {
   return s.toLowerCase();
 }
 
+// Concept-family canonicalization: Liara docs and users use different words
+// for the same concept (وصل/متصل/اتصال = "connect"). Folding each family
+// member to one canonical token — applied identically at index and query time
+// via tokenizeFa — closes the synonym gap that made 3 of 4 landing chips
+// refuse. Curated + high-confidence only (not a broad thesaurus) to avoid
+// false matches. Keys are post-normalizeFa forms.
+const SYNONYM_CANON: Record<string, string> = {
+  // connect
+  وصل: 'اتصال', متصل: 'اتصال', کانکت: 'اتصال', connect: 'اتصال', connecting: 'اتصال', connection: 'اتصال',
+  // deploy
+  دیپلوی: 'استقرار', مستقر: 'استقرار', دیپلویمنت: 'استقرار', deploy: 'استقرار', deployment: 'استقرار', deploying: 'استقرار',
+  // env vars
+  انوایرمنت: 'متغیر', env: 'متغیر', envs: 'متغیر',
+  // domain
+  دامین: 'دامنه', domain: 'دامنه', subdomain: 'زیردامنه',
+  // database
+  دیتابیس: 'دیتابیس', database: 'دیتابیس', db: 'دیتابیس', پایگاهداده: 'دیتابیس',
+  // error / troubleshooting
+  ارور: 'خطا', error: 'خطا', اکسپشن: 'خطا', exception: 'خطا',
+  // create / setup
+  بساز: 'ساخت', ایجاد: 'ساخت', راهاندازی: 'ساخت', setup: 'ساخت', create: 'ساخت',
+  // remove
+  حذف: 'حذف', پاک: 'حذف', delete: 'حذف', remove: 'حذف',
+  // logs
+  لاگ: 'لاگ', log: 'لاگ', logs: 'لاگ',
+  // certificate / ssl
+  گواهی: 'گواهی', certificate: 'گواهی', ssl: 'گواهی',
+};
+
+const SYNONYM_MAP = new Map(Object.entries(SYNONYM_CANON));
+function canon(token: string): string {
+  // Map lookup — NOT `obj[token]`, which would resolve inherited keys like
+  // "constructor"/"toString" (present in JS code blocks) to a function.
+  return SYNONYM_MAP.get(token) ?? token;
+}
+
 const TOKEN_RE = /[\p{L}\p{N}][\p{L}\p{N}._\-‌]*/gu;
 
 /**
@@ -37,8 +73,18 @@ export function tokenizeFa(text: string): string[] {
     if (!t) continue;
     const parts = t.split(/[._\-‌]+/).filter(Boolean);
     const joined = parts.join('');
-    out.push(joined);
-    if (parts.length > 1) for (const p of parts) if (p.length > 1) out.push(p);
+    const hasLatinDigit = /[a-z0-9]/i.test(t);
+    if (hasLatinDigit || parts.length === 1) {
+      // identifiers (next.js, DATABASE_URL) and single tokens: emit the joined
+      // form, plus the sub-parts for identifiers so users can match any spelling
+      out.push(canon(joined));
+      if (hasLatinDigit && parts.length > 1) for (const p of parts) if (p.length > 1) out.push(canon(p));
+    } else {
+      // pure-Persian ZWNJ word (پروژه‌ام, می‌خواهم): the joined form is a
+      // non-word ("پروژهام") that only inflates coverage — emit the real
+      // morphemes and let stopwords drop the clitics (ام, می, …).
+      for (const p of parts) if (p.length > 1) out.push(canon(p));
+    }
   }
   return out;
 }
@@ -66,6 +112,11 @@ const STOPWORDS = new Set([
   'شود', 'بشه', 'است', 'هست', 'نیست', 'دارم', 'دارد', 'داره', 'ندارم',
   'شده', 'بشود', 'من', 'ما', 'شما', 'خودم', 'وقتی', 'الان', 'دیگه', 'یک',
   'چند', 'همه', 'فقط', 'ولی', 'اما', 'پس', 'بعد', 'قبل', 'داخل', 'روش',
+  // Persian clitics / verb fragments left by ZWNJ splitting (پروژه‌ام → ام,
+  // می‌خواهم → می/خواهم) — these carry no doc-discriminating signal
+  'ام', 'ات', 'اش', 'مان', 'تان', 'شان', 'مون', 'تون', 'شون', 'هام',
+  'می', 'نمی', 'ها', 'های', 'هایی', 'تر', 'ترین', 'ای', 'خواهم', 'میخواهم',
+  'میخوام', 'خوام', 'بکنم', 'کنه',
   // en function words
   'how', 'do', 'does', 'the', 'my', 'your', 'a', 'an', 'to', 'for', 'on',
   'in', 'with', 'can', 'i', 'is', 'are', 'it', 'and', 'of', 'or', 'what',
