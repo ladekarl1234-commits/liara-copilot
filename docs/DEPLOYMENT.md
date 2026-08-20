@@ -57,29 +57,26 @@ read; it has not been applied to a real account in this phase.
 
 ## Health endpoint contract
 
-`GET /api/health` (`src/app/api/health/route.ts`) — **always returns HTTP
-200**, distinguishing readiness only in the body:
+`GET /api/health` (`src/app/api/health/route.ts`) returns **200 when the index
+is loaded** and **503 when it is not**, with the detail in the body:
 
 ```json
 {
   "status": "ok" | "degraded",
-  "index": { "loaded": true, "chunkCount": 3630, "builtAt": "..." },
+  "index": { "loaded": true, "chunkCount": 3746, "builtAt": "..." },
   "aiConfigured": true,
   "version": "0.1.0"
 }
 ```
 
-`status: 'degraded'` means the local index failed to load (missing or
-version-mismatched); it does **not** mean the AI provider is unreachable —
-`aiConfigured` only reflects whether env vars are set, not whether the
-provider actually responds. **As shipped, the Docker `HEALTHCHECK`**
-(`wget -qO- http://127.0.0.1:3000/api/health || exit 1`, also declared in
-`liara.json`) only fails on a non-2xx response or a dead process — it will
-report healthy even when `status` is `"degraded"` in the body, because the
-HTTP status code never changes. A production rollout that wants the
-orchestrator to actually restart on a missing index should either parse the
-body in the healthcheck command or change the route to return a non-200 when
-`status !== 'ok'`; neither is done today.
+The index is required to answer anything, so a missing/version-mismatched index
+is a genuine failure → **HTTP 503**, which fails the Docker `HEALTHCHECK`
+(`wget -qO- http://127.0.0.1:3000/api/health || exit 1`, also in `liara.json`)
+and triggers an orchestrator restart. **Keyless mode is still healthy (200):**
+`aiConfigured:false` only means no AI provider env vars are set — the app
+degrades to grounded source listings, which is intentional, not a failure. So
+`status:'degraded'` + 503 signals a broken index specifically, never merely a
+missing API key.
 
 ## Index initialization strategies
 

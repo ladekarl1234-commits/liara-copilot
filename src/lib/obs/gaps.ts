@@ -19,6 +19,7 @@ export interface GapSummaryRow {
 }
 
 let warned = false;
+const MAX_GAP_BYTES = 5 * 1024 * 1024; // rotate past 5MB so the file can't grow unbounded (OBS2-002)
 
 function gapsFile(): string {
   return path.join(config().RUNTIME_DIR, 'gaps.jsonl');
@@ -28,7 +29,14 @@ export function recordGap(entry: GapEntry): void {
   const line = JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n';
   fs.promises
     .mkdir(config().RUNTIME_DIR, { recursive: true })
-    .then(() => fs.promises.appendFile(gapsFile(), line, 'utf8'))
+    .then(async () => {
+      // bounded: rotate to .1 once the file exceeds the cap (keeps one previous
+      // generation, discards older) so gaps.jsonl never grows without limit
+      const f = gapsFile();
+      const size = await fs.promises.stat(f).then((s) => s.size).catch(() => 0);
+      if (size > MAX_GAP_BYTES) await fs.promises.rename(f, f + '.1').catch(() => {});
+      await fs.promises.appendFile(f, line, 'utf8');
+    })
     .catch((err: unknown) => {
       if (!warned) {
         warned = true;

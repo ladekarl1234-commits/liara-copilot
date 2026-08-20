@@ -151,8 +151,18 @@ export function preClassify(message: string): DeterministicSignals {
   const databaseHit = DB_HINTS.find(([re]) => re.test(message));
   const negatedPlatform = platformHit ? isNegated(message, platformHit[0]) : false;
   const negatedDatabase = databaseHit ? isNegated(message, databaseHit[0]) : false;
-  const platform = negatedPlatform ? undefined : platformHit?.[1];
-  const database = negatedDatabase ? undefined : databaseHit?.[1];
+  // On a switch ("use django instead of nextjs"), the FIRST hint (nextjs) is the
+  // negated one — look for a SECOND, non-negated platform to adopt (AG2-001).
+  let platform = negatedPlatform ? undefined : platformHit?.[1];
+  if (negatedPlatform) {
+    const second = PLATFORM_HINTS.find(([re, name]) => name !== platformHit![1] && re.test(message) && !isNegated(message, re));
+    if (second) platform = second[1];
+  }
+  let database = negatedDatabase ? undefined : databaseHit?.[1];
+  if (negatedDatabase) {
+    const second = DB_HINTS.find(([re, name]) => name !== databaseHit![1] && re.test(message) && !isNegated(message, re));
+    if (second) database = second[1];
+  }
   let product = PRODUCT_HINTS.find(([re]) => re.test(message))?.[1];
   if (!product && platform) product = 'paas';
   if (!product && database) product = 'dbaas';
@@ -208,25 +218,13 @@ export function fallbackPlan(message: string, s: DeterministicSignals, state: Se
 
 // Deterministic hypothesis seeding from the error signature — a ranked ledger,
 // most-likely first, so the troubleshooting UI has real content without a model.
-const ERROR_HYPOTHESES: { re: RegExp; hyps: string[] }[] = [
+// Ordered most-specific-first so a query is matched by its distinctive symptom,
+// not a generic one that happens to appear (AG2-002: an SSL error that also says
+// "app not up" must hit the SSL bucket, not the generic port bucket).
+const ERROR_HYPOTHESES: { re: RegExp; specific: boolean; hyps: string[] }[] = [
   {
-    re: /econnrefused|127\.0\.0\.1|localhost|5432|3306|27017|6379|اتصال.*دیتابیس|دیتابیس.*(وصل|اتصال)/i,
-    hyps: [
-      'آدرس اتصال به دیتابیس به localhost/127.0.0.1 اشاره می‌کند نه به هاست داخلی سرویس دیتابیس لیارا',
-      'متغیرهای محیطی اتصال (مثل DATABASE_URL) تنظیم نشده یا اشتباه‌اند',
-      'سرویس دیتابیس در حال اجرا نیست یا هنوز آماده نشده',
-    ],
-  },
-  {
-    re: /\b502\b|bad gateway|بالا نمی|اجرا نمی|پورت|port/i,
-    hyps: [
-      'برنامه به پورت درست (مقدار متغیر PORT) گوش نمی‌دهد یا روی 0.0.0.0 bind نشده',
-      'فرایند برنامه هنگام اجرا کرش می‌کند (لاگ‌ها را بررسی کنید)',
-      'دستور اجرای برنامه (start command) نادرست است',
-    ],
-  },
-  {
-    re: /ssl|گواهی|certificate|https|دامنه.*(کار نمی|وصل)/i,
+    re: /ssl|tls|گواهی|certificate|cert|https|دامنه|domain|dns|رکورد/i,
+    specific: true,
     hyps: [
       'رکوردهای DNS دامنه هنوز به لیارا اشاره نمی‌کنند یا منتشر نشده‌اند',
       'دامنه در بخش دامنه‌های برنامه اضافه/تأیید نشده است',
@@ -234,13 +232,33 @@ const ERROR_HYPOTHESES: { re: RegExp; hyps: string[] }[] = [
     ],
   },
   {
-    re: /disk|دیسک|پر شد|no space|فضا/i,
+    re: /disk|دیسک|پر شد|no space|فضا|storage full/i,
+    specific: true,
     hyps: ['فضای دیسک برنامه پر شده و باید افزایش یابد', 'فایل‌های موقت/لاگ حجم زیادی گرفته‌اند'],
+  },
+  {
+    re: /econnrefused|127\.0\.0\.1|localhost|5432|3306|27017|6379|اتصال.*دیتابیس|دیتابیس.*(وصل|اتصال)/i,
+    specific: true,
+    hyps: [
+      'آدرس اتصال (host/port) به localhost/127.0.0.1 اشاره می‌کند نه به هاست داخلی سرویس مقصد',
+      'متغیرهای محیطی اتصال (مثل DATABASE_URL) تنظیم نشده یا اشتباه‌اند',
+      'سرویس مقصد در حال اجرا/در دسترس نیست یا هنوز آماده نشده',
+    ],
+  },
+  {
+    re: /\b502\b|bad gateway|بالا نمی|اجرا نمی|پورت|\bport\b/i,
+    specific: false,
+    hyps: [
+      'برنامه به پورت درست (مقدار متغیر PORT) گوش نمی‌دهد یا روی 0.0.0.0 bind نشده',
+      'فرایند برنامه هنگام اجرا کرش می‌کند (لاگ‌ها را بررسی کنید)',
+      'دستور اجرای برنامه (start command) نادرست است',
+    ],
   },
 ];
 
 function seedTroubleshooting(message: string, s: DeterministicSignals): SessionState['troubleshooting'] {
-  const match = ERROR_HYPOTHESES.find((h) => h.re.test(message));
+  // prefer a specific bucket over a generic one even if the generic matches too
+  const match = ERROR_HYPOTHESES.find((h) => h.specific && h.re.test(message)) ?? ERROR_HYPOTHESES.find((h) => h.re.test(message));
   const hyps = match?.hyps ?? [
     'پیکربندی یا متغیرهای محیطی برنامه نادرست است',
     'وابستگی یا سرویس موردنیاز در دسترس نیست',

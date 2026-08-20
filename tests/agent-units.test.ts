@@ -85,6 +85,12 @@ describe('preClassify + fallbackPlan', () => {
     expect(t!.hypotheses[0].status).toBe('testing'); // top hypothesis is being tested
     expect(t!.hypotheses[0].text).toMatch(/localhost|127\.0\.0\.1|هاست/); // most-likely cause first
   });
+
+  it('an SSL/domain error hits the SSL bucket, not the generic port bucket (AG2-002)', () => {
+    const q = 'خطای گواهی SSL دامنه‌ام، اپ بالا نمیاد';
+    const p = fallbackPlan(q, preClassify(q), base());
+    expect(p.statePatch.troubleshooting?.hypotheses[0].text).toMatch(/DNS|گواهی|دامنه/);
+  });
 });
 
 describe('sanitizeFences', () => {
@@ -145,6 +151,19 @@ describe('applyPatch — state hygiene (AG-001/AG-002)', () => {
     expect(s.context.knownError).toBeTruthy();
     applyPatch(s, { context: {} as SessionState['context'] }, 'fa', 'question');
     expect(s.context.knownError).toBeUndefined();
+  });
+
+  it('does NOT clear knownError while a troubleshooting flow is active (AG2-004)', () => {
+    const s = getOrCreateSession();
+    applyPatch(
+      s,
+      { context: { knownError: 'connect ECONNREFUSED 5432' } as SessionState['context'], troubleshooting: { problem: 'db down', hypotheses: [{ id: 'h1', text: 'x', status: 'testing' }], resolved: false } },
+      'fa',
+      'troubleshooting',
+    );
+    // a follow-up question DURING the Fix flow must keep the error context
+    applyPatch(s, { context: {} as SessionState['context'] }, 'fa', 'question');
+    expect(s.context.knownError).toBeTruthy();
   });
 
   it('switching product clears the previous troubleshooting ledger', () => {

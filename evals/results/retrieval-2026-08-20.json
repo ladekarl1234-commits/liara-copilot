@@ -2,10 +2,10 @@
   "date": "2026-08-20",
   "total": 61,
   "sourced": 48,
-  "hit1": 0.4166666666666667,
-  "hit3": 0.7291666666666666,
-  "hit5": 0.7916666666666666,
-  "mrr": 0.5746527777777778,
+  "hit1": 0.4375,
+  "hit3": 0.75,
+  "hit5": 0.8125,
+  "mrr": 0.595486111111111,
   "gateCases": 13,
   "gateAccuracy": 0.9230769230769231,
   "confidence": {
@@ -93,10 +93,10 @@
     },
     "service-discovery": {
       "n": 2,
-      "hit1": 0,
-      "hit3": 0,
-      "hit5": 0,
-      "mrr": 0,
+      "hit1": 0.5,
+      "hit3": 0.5,
+      "hit5": 0.5,
+      "mrr": 0.5,
       "gateN": 0,
       "gateOk": 0,
       "confidence": {
@@ -378,7 +378,7 @@
         "/paas/domains/add-wildcard-domain",
         "/overview/about",
         "/paas/details/plans/software-plans",
-        "/paas/domains/use-cdn"
+        "/iaas/debian/how-tos/connect-domain"
       ],
       "expected": [
         "/paas/domains/enable-ssl"
@@ -479,14 +479,13 @@
     {
       "id": "discover-file-storage",
       "category": "service-discovery",
-      "rank": null,
+      "rank": 1,
       "confidence": "low",
       "topPages": [
+        "/object-storage/about",
         "/overview/about",
         "/paas/details/file-system",
-        "/paas/details/plans/hardware-plans",
-        "/dbaas/move",
-        "/dbaas/details/plans/hardware-plans"
+        "/ai/details/plans"
       ],
       "expected": [
         "/object-storage/about"
@@ -926,7 +925,7 @@
         "/references/cli/install",
         "/paas/laravel/how-tos/configure-trustedproxies",
         "/paas/django/how-tos/use-websocket",
-        "/paas/django/how-tos/connect-to-db/elastic-search"
+        "/ai/ai-sdk-errors/ai-api-call-error"
       ],
       "expected": [
         "/references/cli/install"

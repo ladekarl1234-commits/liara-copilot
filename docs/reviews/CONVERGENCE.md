@@ -8,3 +8,5 @@ Two scorecards are tracked: **Current-Phase Quality** (0–100, in-scope only) a
 |---|---|---|---|---|---|---|---|---|
 | baseline | `67caf52` | — | — | — | — | — | Phase I complete: 133 tests, gate/security/RTL hardened over 3 internal rounds | judge loop pending |
 | 001 | `67caf52` | ~72/100 · 191/300 | 0 | 7 | 30 | 27 | retrieval dedup+synonym gap, gate-high fires on wrong page, agentic negation/knownError, keyless Fix/Guide inert, docker public/ missing, token accounting | retrieval precision, agentic state |
+| 001-fixed | `1c35583` | — | 0 | 0 | 0 | — | Batch 1-5 applied: retrieval hit@5 0.708→0.792, injection detector (adversarial 6/6), agentic negation/knownError/keyless Fix-Guide, npm 0 vulns, deploy (public/, tracing root, health 503), token accounting, docs synced | Round 2 pending |
+| 002 | `1c35583` | ~78/100 · ~205/300 | 0 | 0 | 17 | 13 | injection precision (FP+bypass), agentic knownError regression + Fix-on-weak-evidence + SSL bucket, niche over-fire (hit@5 0.792→0.813), Persian token estimate, deploy doc, gap cap | none blocking; AG2-001 keyless "instead of" + single-instance ceiling deferred |

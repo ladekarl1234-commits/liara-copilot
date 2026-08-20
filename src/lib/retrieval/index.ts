@@ -13,17 +13,24 @@ const KNOWN_PLATFORMS = new Set([
   'php', 'python', 'dotnet', 'go', 'docker', 'static',
 ]);
 
-// Niche products and the (post-canon) query tokens that legitimately invoke
-// them. A query lacking these should not surface the product's pages — a plain
+// Niche products and the natural-language terms that legitimately invoke them.
+// A query lacking any of these should not surface the product's pages — a plain
 // "deploy my project" must not resolve to an AI FAQ or a package-mirror page.
-const NICHE_PRODUCT_TRIGGERS: Record<string, string[]> = {
-  ai: ['ai', 'هوش', 'مصنوعی', 'مدل', 'llm', 'چتبات', 'openai', 'embedding', 'prompt'],
-  mirrors: ['میرور', 'mirror', 'npm', 'pip', 'apt', 'docker', 'مخزن'],
-  'email-server': ['ایمیل', 'email', 'smtp', 'imap', 'pop3', 'mail'],
-  iaas: ['سرور', 'مجازی', 'vps', 'iaas', 'ubuntu', 'debian', 'وی‌پی‌اس'],
-  'object-storage': ['باکت', 'bucket', 'storage', 's3', 'آبجکت', 'ذخیره'],
-  'dns-management-system': ['dns', 'رکورد', 'نیم‌سرور', 'nameserver'],
+// Terms are written naturally (incl. ZWNJ) and run through the SAME tokenizer +
+// synonym fold as the query, so "وی‌پی‌اس"/"نگهداری" match after splitting
+// (RETR-001/002). Broadened with paraphrase terms for need-description queries.
+const NICHE_PRODUCT_TERMS: Record<string, string[]> = {
+  ai: ['هوش مصنوعی', 'مدل زبانی', 'llm', 'چت‌بات', 'openai', 'embedding', 'پرامپت', 'gpt', 'ai'],
+  mirrors: ['میرور', 'mirror', 'npm', 'pip', 'apt', 'مخزن', 'mirrors'],
+  'email-server': ['ایمیل', 'email', 'smtp', 'imap', 'pop3', 'mail', 'ایمیل‌سرور'],
+  iaas: ['سرور مجازی', 'وی‌پی‌اس', 'vps', 'iaas', 'ubuntu', 'debian', 'ماشین مجازی'],
+  'object-storage': ['باکت', 'bucket', 'object storage', 's3', 'آبجکت', 'ذخیره', 'نگهداری فایل', 'آپلود فایل', 'فضای ذخیره'],
+  'dns-management-system': ['dns', 'رکورد', 'نیم‌سرور', 'nameserver', 'دی‌ان‌اس'],
 };
+// pre-tokenize each product's trigger terms into the same token space as queries
+const NICHE_TRIGGER_TOKENS: Record<string, Set<string>> = Object.fromEntries(
+  Object.entries(NICHE_PRODUCT_TERMS).map(([p, terms]) => [p, new Set(terms.flatMap((t) => tokenizeFa(t)))]),
+);
 import { config } from '@/lib/config';
 
 export const LEXICAL_VERSION = 3; // bump when miniOptions/tokenization change
@@ -183,8 +190,8 @@ export async function search(
   // must not resolve to an /ai/faq page). Down-rank a niche product's chunks
   // unless the query references that product or the filter selects it.
   const nicheReferenced = new Set<string>();
-  for (const [prod, triggers] of Object.entries(NICHE_PRODUCT_TRIGGERS)) {
-    if (filters.product === prod || triggers.some((t) => qTokenSet.has(t))) nicheReferenced.add(prod);
+  for (const [prod, triggerTokens] of Object.entries(NICHE_TRIGGER_TOKENS)) {
+    if (filters.product === prod || [...triggerTokens].some((t) => qTokenSet.has(t))) nicheReferenced.add(prod);
   }
   const fused: ScoredChunk[] = [];
   for (const [id, base] of rrf) {
@@ -200,8 +207,10 @@ export async function search(
     // for a platform-less query, a framework-specific how-to is usually the
     // wrong first hit — the general reference/overview page is canonical
     if (!platformNamed && chunk.platform) score *= 0.85;
-    // niche product not referenced by the query → it is cross-product noise
-    if (chunk.product in NICHE_PRODUCT_TRIGGERS && !nicheReferenced.has(chunk.product)) score *= 0.55;
+    // niche product not referenced by the query → likely cross-product noise.
+    // A gentle penalty (not a burial) so a paraphrased need still surfaces the
+    // right product if lexical relevance is strong (RETR-001).
+    if (chunk.product in NICHE_TRIGGER_TOKENS && !nicheReferenced.has(chunk.product)) score *= 0.72;
     // `/about` and `/overview/about` hub pages are broad; a concrete
     // quick-start / how-to / details page answers better
     if (/\/about\.md$/.test(chunk.sourcePath)) score *= 0.85;

@@ -3,12 +3,12 @@
 // 0 for greetings, cached FAQs, and the keyless degraded mode.
 
 import crypto from 'node:crypto';
-import type { ChatEvent, Citation, ModelProvider, RetrievalResult, ScoredChunk, Usage } from '@/types';
+import type { ChatEvent, Citation, ModelProvider, RetrievalResult, ScoredChunk, SessionState, Usage } from '@/types';
 import { config } from '@/lib/config';
 import { search, loadIndex, citationUrl, IndexMissingError } from '@/lib/retrieval/index';
 import { normalizedKey, detectLanguage } from '@/lib/text/persian';
 import { getProvider, ModelError, ClientAbortError } from '@/lib/ai/provider';
-import { pickAnswerRoute, estimateCostUsd, addUsage } from '@/lib/ai/router';
+import { pickAnswerRoute, estimateCostUsd, addUsage, estimateTokens } from '@/lib/ai/router';
 import { makePlan } from '@/lib/agent/plan';
 import { verifyAnswer } from '@/lib/agent/verify';
 import { answerSystemPrompt, CANNED, sanitizeFences } from '@/lib/agent/prompts';
@@ -134,6 +134,20 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     // --- evidence gate ---
     const gateFailed = retrieval.confidence === 'low' || !retrieval.chunks.length;
     if (plan.action === 'insufficient' || plan.intent === 'unsupported' || gateFailed) {
+      // Troubleshooting REASONS from the symptom — it must not collapse into a
+      // flat "couldn't find it" just because retrieval was weak. If the plan
+      // seeded a hypothesis ledger, run the Fix flow: show the ranked causes and
+      // the first diagnostic step, and surface the troubleshooting state.
+      const t = session.troubleshooting;
+      if (plan.intent === 'troubleshooting' && t && t.hypotheses.length) {
+        const msg = fixFramedMessage(t, plan.language);
+        emit({ type: 'delta', text: msg });
+        emitState(emit, session);
+        finish(emit, session.id, message, msg);
+        setLastAction(session.id, 'next_step');
+        record('troubleshoot_low_evidence');
+        return;
+      }
       const msg = CANNED.insufficient[plan.language];
       emit({ type: 'delta', text: msg });
       // On a refusal, do NOT attach citations: the gate just said the evidence
@@ -181,10 +195,10 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     }
     modelLatencyMs = Date.now() - tModel;
     // The streaming API returns no usage object, so estimate BOTH sides from the
-    // real prompt + completion length (was inputTokens:0 — the answer call sends
-    // the biggest prompt of the request, so cost/token metrics were badly wrong).
-    const answerInputTokens = Math.ceil(answerMessages.reduce((n, m) => n + m.content.length, 0) / 4);
-    usage = addUsage(usage, { inputTokens: answerInputTokens, outputTokens: Math.ceil(answer.length / 4) });
+    // real prompt + completion (was inputTokens:0 — the answer call sends the
+    // biggest prompt of the request). Persian-aware estimate (OBS2-001).
+    const answerInputTokens = answerMessages.reduce((n, m) => n + estimateTokens(m.content), 0);
+    usage = addUsage(usage, { inputTokens: answerInputTokens, outputTokens: estimateTokens(answer) });
 
     const citations = citationsFromAnswer(answer, retrieval.chunks);
     emit({ type: 'citations', citations });
@@ -278,6 +292,16 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
       error: errorCategory ? `${errorCategory} (${outcome})` : undefined,
     });
   }
+}
+
+/** A ranked-hypotheses Fix message when retrieval is weak but we can still reason from the symptom. */
+function fixFramedMessage(t: NonNullable<SessionState['troubleshooting']>, lang: 'fa' | 'en'): string {
+  const top = t.hypotheses[0]?.text ?? '';
+  const others = t.hypotheses.slice(1).map((h: { text: string }) => `• ${h.text}`).join('\n');
+  if (lang === 'fa') {
+    return `برای این خطا محتمل‌ترین علت‌ها این‌ها هستند. بیایید از محتمل‌ترین شروع کنیم:\n\n**اولین چیزی که بررسی کنیم:** ${top}\n\n${others ? `سایر احتمال‌ها:\n${others}\n\n` : ''}نتیجه‌ی بررسی بالا را بگویید تا قدم بعدی را مشخص کنم.`;
+  }
+  return `Here are the most likely causes for this error. Let's start with the most likely:\n\n**First thing to check:** ${top}\n\n${others ? `Other possibilities:\n${others}\n\n` : ''}Tell me what you find and I'll narrow down the next step.`;
 }
 
 function emitState(emit: (e: ChatEvent) => void, session: ReturnType<typeof getOrCreateSession>) {

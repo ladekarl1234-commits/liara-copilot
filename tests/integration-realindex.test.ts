@@ -93,6 +93,12 @@ d('real index: evidence gate', () => {
     expect(top?.product).not.toBe('mirrors');
   });
 
+  it('a paraphrased storage NEED still surfaces object-storage (RETR-001)', async () => {
+    // no exact trigger token ("ذخیره"/"bucket") — describes the need instead
+    const r = await search(['برای نگهداری فایل‌های آپلودی کاربرانم کدوم سرویس لیارا مناسبه'], {}, {}, loadIndex(INDEX_DIR));
+    expect(r.chunks.some((s) => s.chunk.product === 'object-storage')).toBe(true);
+  });
+
   it('applies the product filter independently of platform (no cross-product leak at real scale)', async () => {
     // enough dbaas/postgresql chunks exist that the <5 fallback never fires,
     // so the product filter is the only thing selecting results

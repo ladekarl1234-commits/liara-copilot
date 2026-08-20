@@ -58,11 +58,17 @@ export function applyPatch(
 
   // A fresh, non-error, non-continuation question means the previous error is
   // stale — clear it so an unrelated turn isn't answered against an old
-  // "connect ECONNREFUSED" (AG-002). A new distinct product also invalidates it.
+  // "connect ECONNREFUSED" (AG-002). BUT never clear it mid-flow: while an
+  // unresolved troubleshooting session is active, a follow-up/clarification is
+  // part of that flow and must keep the error context (AG2-004 regression).
   const newProduct = patch.context?.product;
   const topicSwitched = Boolean(newProduct && newProduct !== s.context.product);
-  if ((intent === 'question' || intent === 'workflow' || topicSwitched) && !patch.context?.knownError) {
-    s.context.knownError = undefined;
+  const activeTroubleshooting = Boolean(s.troubleshooting && !s.troubleshooting.resolved);
+  if (
+    ((intent === 'question' || intent === 'workflow') && !activeTroubleshooting) ||
+    topicSwitched
+  ) {
+    if (!patch.context?.knownError) s.context.knownError = undefined;
     if (topicSwitched) s.troubleshooting = undefined;
   }
 

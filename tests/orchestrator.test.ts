@@ -177,6 +177,24 @@ describe('orchestrator', () => {
     expect(text).toContain('کدام دیتابیس');
   });
 
+  it('runs the Fix flow (ranked hypotheses + state) even when retrieval is weak', async () => {
+    // keyless troubleshooting: an error paste that gates low must NOT collapse
+    // into a flat refusal — it should reason from the symptom
+    delete process.env.AI_BASE_URL;
+    delete process.env.AI_API_KEY;
+    resetConfigForTests();
+    const events = await run('connect ECONNREFUSED 127.0.0.1:5432');
+    const tr = events.find((e) => e.type === 'troubleshooting') as Extract<ChatEvent, { type: 'troubleshooting' }>;
+    expect(tr, 'a troubleshooting event must be emitted').toBeTruthy();
+    expect(tr.state.hypotheses.length).toBeGreaterThanOrEqual(2);
+    const text = events
+      .filter((e): e is Extract<ChatEvent, { type: 'delta' }> => e.type === 'delta')
+      .map((e) => e.text)
+      .join('');
+    expect(text).not.toMatch(/couldn't find|پیدا نکردم/); // not a bare refusal
+    expect(text).toMatch(/check|بررسی/); // a diagnostic step is offered
+  });
+
   it('degrades gracefully without a configured provider (sources only)', async () => {
     delete process.env.AI_BASE_URL;
     delete process.env.AI_API_KEY;
