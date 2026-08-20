@@ -65,6 +65,10 @@ const PlanSchema = z.object({
             .max(12),
         })
         .optional(),
+      clearContext: z
+        .array(z.enum(['platform', 'database', 'knownError', 'product']))
+        .max(4)
+        .optional(),
     })
     .catch({}),
   retrievalQueries: z.array(z.string().max(200)).max(3).catch([]),
@@ -114,9 +118,13 @@ const PRODUCT_HINTS: [RegExp, string][] = [
 ];
 
 const ERROR_RE =
-  /econnrefused|etimedout|enotfound|eaddrinuse|eacces|traceback|exception|stack trace|\b50[234]\b|\b4\d\d\b error|error:|failed|خطا|ارور|کرش|crash|نمی‌?شه|نمی‌?شود|کار نمی‌?کند|مشکل دارم/i;
+  /econnrefused|etimedout|enotfound|eaddrinuse|eacces|traceback|exception|stack trace|\b50[234]\b|\b4\d\d\b error|error:|failed|fail(s|ed|ing)?|خطا|ارور|اکسپشن|کرش|crash|نمی‌?شه|نمی‌?شود|نمی‌?کند|کار نمی‌?کن|بالا نمی‌?(آد|یاد|اد)|اجرا نمی‌?ش|مشکل دار|صادر نشد|پر شد|تعریف نشد|یافت نشد|not found|بیلد (نمی|خطا)|down|قطع (شد|می‌?ش)/i;
 
 const GREETING_RE = /^(سلام|درود|hi|hello|hey|صبح بخیر|وقت بخیر|خسته نباشید)[!.\s؟?]*$/i;
+
+// "it is NOT nextjs" / "دیگه nextjs نیست" / "از nextjs استفاده نمی‌کنم" — a
+// negated stack term must clear, not set, that context.
+const NEGATION_RE = /\b(not|isn'?t|no longer|instead of)\b|نیست|نه\b|دیگه\s*نیست|استفاده\s*نمی|عوض\s*کرد|به\s*جای/i;
 
 export interface DeterministicSignals {
   language: 'fa' | 'en';
@@ -125,11 +133,26 @@ export interface DeterministicSignals {
   platform?: string;
   database?: string;
   product?: string;
+  negatedPlatform?: boolean; // a platform term appears, but negated
+  negatedDatabase?: boolean;
+}
+
+/** True when `term` appears within a short window of a negation cue. */
+function isNegated(message: string, termRe: RegExp): boolean {
+  if (!NEGATION_RE.test(message)) return false;
+  const m = termRe.exec(message);
+  if (!m) return false;
+  const around = message.slice(Math.max(0, m.index - 25), m.index + m[0].length + 25);
+  return NEGATION_RE.test(around);
 }
 
 export function preClassify(message: string): DeterministicSignals {
-  const platform = PLATFORM_HINTS.find(([re]) => re.test(message))?.[1];
-  const database = DB_HINTS.find(([re]) => re.test(message))?.[1];
+  const platformHit = PLATFORM_HINTS.find(([re]) => re.test(message));
+  const databaseHit = DB_HINTS.find(([re]) => re.test(message));
+  const negatedPlatform = platformHit ? isNegated(message, platformHit[0]) : false;
+  const negatedDatabase = databaseHit ? isNegated(message, databaseHit[0]) : false;
+  const platform = negatedPlatform ? undefined : platformHit?.[1];
+  const database = negatedDatabase ? undefined : databaseHit?.[1];
   let product = PRODUCT_HINTS.find(([re]) => re.test(message))?.[1];
   if (!product && platform) product = 'paas';
   if (!product && database) product = 'dbaas';
@@ -140,15 +163,29 @@ export function preClassify(message: string): DeterministicSignals {
     platform,
     database,
     product,
+    negatedPlatform,
+    negatedDatabase,
   };
 }
 
 export function fallbackPlan(message: string, s: DeterministicSignals, state: SessionState): AgentPlan {
   // inherit session platform only when this message has no topic of its own
   const ownTopic = s.database ?? (s.product && s.product !== 'paas' ? s.product : undefined);
-  const platform = s.platform ?? (ownTopic ? undefined : state.context.platform);
+  const negated = s.negatedPlatform || s.negatedDatabase;
+  const platform = s.platform ?? (ownTopic || negated ? undefined : state.context.platform);
+  const intent: AgentPlan['intent'] = s.isGreeting ? 'chitchat' : s.hasError ? 'troubleshooting' : 'question';
+
+  const clearContext: NonNullable<AgentPlan['statePatch']['clearContext']> = [];
+  if (s.negatedPlatform) clearContext.push('platform');
+  if (s.negatedDatabase) clearContext.push('database');
+
+  // Deterministically seed the agentic state so Fix/Guide are visible even in
+  // keyless mode (no model to author it). Ranked hypotheses come from the
+  // error signature; workflow steps from a detected deploy intent.
+  const troubleshooting = s.hasError ? seedTroubleshooting(message, s) : undefined;
+
   return {
-    intent: s.isGreeting ? 'chitchat' : s.hasError ? 'troubleshooting' : 'question',
+    intent,
     language: s.language,
     action: 'answer',
     statePatch: {
@@ -158,12 +195,61 @@ export function fallbackPlan(message: string, s: DeterministicSignals, state: Se
         ...(s.product ? { product: s.product } : {}),
         ...(s.hasError ? { knownError: message.slice(0, 300) } : {}),
       } as SessionState['context'],
+      ...(clearContext.length ? { clearContext } : {}),
+      ...(troubleshooting ? { troubleshooting } : {}),
     },
     retrievalQueries: s.isGreeting ? [] : [message.slice(0, 200)],
     filters: {
       ...(platform ? { platform } : {}),
       ...(s.product && s.product !== 'paas' ? { product: s.product } : {}),
     },
+  };
+}
+
+// Deterministic hypothesis seeding from the error signature — a ranked ledger,
+// most-likely first, so the troubleshooting UI has real content without a model.
+const ERROR_HYPOTHESES: { re: RegExp; hyps: string[] }[] = [
+  {
+    re: /econnrefused|127\.0\.0\.1|localhost|5432|3306|27017|6379|اتصال.*دیتابیس|دیتابیس.*(وصل|اتصال)/i,
+    hyps: [
+      'آدرس اتصال به دیتابیس به localhost/127.0.0.1 اشاره می‌کند نه به هاست داخلی سرویس دیتابیس لیارا',
+      'متغیرهای محیطی اتصال (مثل DATABASE_URL) تنظیم نشده یا اشتباه‌اند',
+      'سرویس دیتابیس در حال اجرا نیست یا هنوز آماده نشده',
+    ],
+  },
+  {
+    re: /\b502\b|bad gateway|بالا نمی|اجرا نمی|پورت|port/i,
+    hyps: [
+      'برنامه به پورت درست (مقدار متغیر PORT) گوش نمی‌دهد یا روی 0.0.0.0 bind نشده',
+      'فرایند برنامه هنگام اجرا کرش می‌کند (لاگ‌ها را بررسی کنید)',
+      'دستور اجرای برنامه (start command) نادرست است',
+    ],
+  },
+  {
+    re: /ssl|گواهی|certificate|https|دامنه.*(کار نمی|وصل)/i,
+    hyps: [
+      'رکوردهای DNS دامنه هنوز به لیارا اشاره نمی‌کنند یا منتشر نشده‌اند',
+      'دامنه در بخش دامنه‌های برنامه اضافه/تأیید نشده است',
+      'صدور گواهی SSL هنوز کامل نشده (کمی زمان می‌برد)',
+    ],
+  },
+  {
+    re: /disk|دیسک|پر شد|no space|فضا/i,
+    hyps: ['فضای دیسک برنامه پر شده و باید افزایش یابد', 'فایل‌های موقت/لاگ حجم زیادی گرفته‌اند'],
+  },
+];
+
+function seedTroubleshooting(message: string, s: DeterministicSignals): SessionState['troubleshooting'] {
+  const match = ERROR_HYPOTHESES.find((h) => h.re.test(message));
+  const hyps = match?.hyps ?? [
+    'پیکربندی یا متغیرهای محیطی برنامه نادرست است',
+    'وابستگی یا سرویس موردنیاز در دسترس نیست',
+    'لاگ‌های برنامه علت دقیق را نشان می‌دهند',
+  ];
+  return {
+    problem: message.slice(0, 200),
+    hypotheses: hyps.map((text, i) => ({ id: `h${i + 1}`, text, status: i === 0 ? 'testing' : 'untested' })),
+    resolved: false,
   };
 }
 

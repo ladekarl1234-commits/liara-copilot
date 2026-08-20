@@ -93,7 +93,7 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     usage = addUsage(usage, planned.usage);
     intent = plan.intent;
 
-    applyPatch(session, plan.statePatch, plan.language);
+    applyPatch(session, plan.statePatch, plan.language, plan.intent);
     save(session);
     const chips = contextChips(session);
     if (chips.length) emit({ type: 'context', chips });
@@ -156,6 +156,9 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
       const msg = CANNED.aiNotConfigured[plan.language];
       emit({ type: 'delta', text: msg });
       emit({ type: 'citations', citations: toCitations(retrieval.chunks.slice(0, 5)) });
+      // still surface the agentic state (troubleshooting hypotheses / workflow
+      // steps) the plan seeded — Fix/Guide are visible even without a model
+      emitState(emit, session);
       finish(emit, session.id, message, msg);
       record('degraded');
       return;

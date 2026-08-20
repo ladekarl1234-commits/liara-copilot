@@ -47,9 +47,25 @@ export function save(s: SessionState): void {
 }
 
 /** Merge a plan's state patch into the session, with bounded sizes. */
-export function applyPatch(s: SessionState, patch: AgentPlan['statePatch'], language: 'fa' | 'en'): void {
+export function applyPatch(
+  s: SessionState,
+  patch: AgentPlan['statePatch'],
+  language: 'fa' | 'en',
+  intent?: AgentPlan['intent'],
+): void {
   s.language = language;
   if (patch.profile) s.profile = { ...s.profile, ...clean(patch.profile) };
+
+  // A fresh, non-error, non-continuation question means the previous error is
+  // stale — clear it so an unrelated turn isn't answered against an old
+  // "connect ECONNREFUSED" (AG-002). A new distinct product also invalidates it.
+  const newProduct = patch.context?.product;
+  const topicSwitched = Boolean(newProduct && newProduct !== s.context.product);
+  if ((intent === 'question' || intent === 'workflow' || topicSwitched) && !patch.context?.knownError) {
+    s.context.knownError = undefined;
+    if (topicSwitched) s.troubleshooting = undefined;
+  }
+
   if (patch.context) {
     const { triedActions, ...rest } = patch.context as SessionState['context'];
     s.context = { ...s.context, ...clean(rest), triedActions: s.context.triedActions };
@@ -58,10 +74,18 @@ export function applyPatch(s: SessionState, patch: AgentPlan['statePatch'], lang
       s.context.triedActions = s.context.triedActions.slice(-20);
     }
   }
+
+  // explicit clears (e.g. user corrected "it is NOT nextjs") — after the merge
+  for (const field of patch.clearContext ?? []) {
+    if (field === 'platform') s.context.platform = undefined;
+    else if (field === 'database') s.context.database = undefined;
+    else if (field === 'knownError') s.context.knownError = undefined;
+    else if (field === 'product') s.context.product = undefined;
+  }
+
   if (patch.troubleshooting) {
     patch.troubleshooting.hypotheses = (patch.troubleshooting.hypotheses ?? []).slice(0, 8);
     s.troubleshooting = patch.troubleshooting;
-    if (s.troubleshooting.resolved) s.workflow = s.workflow; // no-op; keep workflow as-is
   }
   if (patch.workflow) {
     patch.workflow.steps = (patch.workflow.steps ?? []).slice(0, 12);

@@ -111,6 +111,9 @@ export interface AgentPlan {
   statePatch: Partial<Pick<SessionState, 'profile' | 'context'>> & {
     troubleshooting?: SessionState['troubleshooting'];
     workflow?: SessionState['workflow'];
+    // context fields to CLEAR (e.g. the user corrected/negated the platform).
+    // clean-merge can only set fields, not remove them, so clearing is explicit.
+    clearContext?: ('platform' | 'database' | 'knownError' | 'product')[];
   };
   retrievalQueries: string[]; // <= 3, in docs language (Persian) + key EN terms
   filters: RetrievalFilters;

@@ -5,6 +5,7 @@ import { extractJson, preClassify, fallbackPlan } from '@/lib/agent/plan';
 import { citationsFromAnswer } from '@/lib/agent/orchestrator';
 import { sanitizeFences } from '@/lib/agent/prompts';
 import { resetConfigForTests } from '@/lib/config';
+import { getOrCreateSession, applyPatch, resetSessionsForTests } from '@/lib/state/sessions';
 import type { DocChunk, ScoredChunk, SessionState } from '@/types';
 
 describe('extractJson', () => {
@@ -60,6 +61,30 @@ describe('preClassify + fallbackPlan', () => {
     expect(p.intent).toBe('chitchat');
     expect(p.retrievalQueries).toEqual([]);
   });
+
+  it('detects a NEGATED platform and emits clearContext instead of setting it', () => {
+    const s = preClassify('نه، nextjs نیست؛ پروژه داکرایز شده');
+    expect(s.negatedPlatform).toBe(true);
+    expect(s.platform).toBeUndefined();
+    const p = fallbackPlan('نه، nextjs نیست؛ پروژه داکرایز شده', s, base());
+    expect(p.statePatch.clearContext).toContain('platform');
+  });
+
+  it('broadened error detection covers Persian error phrasings', () => {
+    for (const e of ['گواهی SSL صادر نشد', 'اپلیکیشنم بالا نمیاد', 'دیسک پر شده', 'متغیر محیطی DATABASE_URL تعریف نشده']) {
+      expect(preClassify(e).hasError, e).toBe(true);
+    }
+  });
+
+  it('seeds ranked troubleshooting hypotheses deterministically (keyless Fix)', () => {
+    const s = preClassify('connect ECONNREFUSED 127.0.0.1:5432');
+    const p = fallbackPlan('connect ECONNREFUSED 127.0.0.1:5432', s, base());
+    const t = p.statePatch.troubleshooting;
+    expect(t).toBeTruthy();
+    expect(t!.hypotheses.length).toBeGreaterThanOrEqual(2);
+    expect(t!.hypotheses[0].status).toBe('testing'); // top hypothesis is being tested
+    expect(t!.hypotheses[0].text).toMatch(/localhost|127\.0\.0\.1|هاست/); // most-likely cause first
+  });
 });
 
 describe('sanitizeFences', () => {
@@ -100,5 +125,38 @@ describe('citationsFromAnswer', () => {
     const cites = citationsFromAnswer('no markers here', evidence);
     expect(cites.length).toBe(3);
     expect(cites[0].n).toBeUndefined();
+  });
+});
+
+describe('applyPatch — state hygiene (AG-001/AG-002)', () => {
+  beforeEach(() => resetSessionsForTests());
+
+  it('a corrected/negated platform is cleared, not left stale', () => {
+    const s = getOrCreateSession();
+    applyPatch(s, { context: { platform: 'nextjs' } as SessionState['context'] }, 'fa', 'question');
+    expect(s.context.platform).toBe('nextjs');
+    applyPatch(s, { clearContext: ['platform'] }, 'fa', 'followup');
+    expect(s.context.platform).toBeUndefined();
+  });
+
+  it('stale knownError is cleared by a fresh non-error question', () => {
+    const s = getOrCreateSession();
+    applyPatch(s, { context: { knownError: 'connect ECONNREFUSED 5432' } as SessionState['context'] }, 'fa', 'troubleshooting');
+    expect(s.context.knownError).toBeTruthy();
+    applyPatch(s, { context: {} as SessionState['context'] }, 'fa', 'question');
+    expect(s.context.knownError).toBeUndefined();
+  });
+
+  it('switching product clears the previous troubleshooting ledger', () => {
+    const s = getOrCreateSession();
+    applyPatch(
+      s,
+      { context: { product: 'dbaas' } as SessionState['context'], troubleshooting: { problem: 'db down', hypotheses: [{ id: 'h1', text: 'x', status: 'testing' }], resolved: false } },
+      'fa',
+      'troubleshooting',
+    );
+    expect(s.troubleshooting).toBeTruthy();
+    applyPatch(s, { context: { product: 'object-storage' } as SessionState['context'] }, 'fa', 'question');
+    expect(s.troubleshooting).toBeUndefined();
   });
 });
