@@ -63,17 +63,15 @@ session.
   isolate` — their content is always an English/technical display name
   (`Next.js`, `PostgreSQL`) even in a Persian UI.
 
-## Typography note (known gap)
+## Typography
 
-`globals.css` declares `--font-sans: "Vazirmatn", "Segoe UI", Tahoma,
-ui-sans-serif, sans-serif`, but no `next/font`, Google Fonts `<link>`, or
-local `@font-face`/font file ships Vazirmatn anywhere in the repo
-(`src/app/layout.tsx` has no font import). In practice the UI renders in
-whatever the OS substitutes for the first unavailable name in that stack
-(`Segoe UI` on Windows, the system Persian font elsewhere) — Vazirmatn is
-declared as an intent, not an actually-bundled font. Fixing this is a
-one-line addition (a Google Fonts `@import`/`<link>` or `next/font/google`),
-noted here rather than silently claimed as working.
+**Resolved** (was a known gap; fixed in the D12 redesign). Vazirmatn is now
+actually bundled via `next/font/google` (`src/app/layout.tsx`, weights
+400/500/700/800, `display: swap`), exposed as `--font-vazir` and consumed by
+`--font-sans` in `globals.css`. Because `next/font` self-hosts the files, no
+external font host is contacted and the CSP needs no `fonts.googleapis.com`
+entry. The fallback stack (`"Segoe UI", Tahoma, ui-sans-serif`) still applies
+while the face loads.
 
 ## Conversation patterns
 

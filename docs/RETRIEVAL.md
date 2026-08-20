@@ -45,8 +45,8 @@ sibling MDX, matches `normalizeFa(title)` → `id`, and `chunkMarkdown()`
 attaches the anchor to any chunk whose heading text matches. When no MDX
 sibling exists, or the heading has no authored id, the chunk cites the page
 URL without an anchor. Measured coverage from the last build
-(`data/index/meta.json`): **36.1%** of chunks carry a deep anchor (1,310 of
-3,630).
+(`data/index/meta.json`): **36.6%** of chunks carry a deep anchor (1,370 of
+3,746, from 1,142 source files).
 
 ## Persian normalization + tokenization (`src/lib/text/persian.ts`)
 

@@ -57,7 +57,7 @@ confidence simple factual question always gets the fast model.
 - **Embedding hash cache** (`data/index/embeddings.json`) — incremental by
   chunk `hash`; `scripts/build-index.ts` only embeds chunks whose hash isn't
   already cached from a prior build with the same model, so a docs update
-  that changes 10 chunks re-embeds 10, not 3,630.
+  that changes 10 chunks re-embeds 10, not 3,746.
 
 ## Request classes
 

@@ -84,6 +84,30 @@ Hybrid + rerank (the shipped ranker, with embeddings enabled) lifts Recall@1 fro
 
 **Tests:** `192 passed / 20 files` (`npm test`) · typecheck clean · `npm run build` clean · `npm audit --omit=dev` **0 production vulnerabilities** (the local-embedding benchmark tooling pulls dev-only advisories that never ship).
 
+## 🧑‍⚖️ Independent expert review
+
+This codebase has been put through a **15-agent independent expert panel**. Each agent owned one dimension, worked without cross-talk, and was required to verify claims against the source and back every finding with `file:line` evidence and a concrete fix — individual findings cite re-runs of the test suite, the eval and the build, plus throwaway probes against the live index. Deployment, CI/hosting and video generation were **excluded** from that round by design — it scores the software itself.
+
+**Result: mean 75/100 across 15 dimensions · 170 findings (4 critical · 47 high · 83 medium · 36 low).**
+
+| Dimension | Score | | Dimension | Score |
+|---|---:|---|---|---:|
+| Code quality & maintainability | 84 | | Reliability & error handling | 78 |
+| Technical architecture | 82 | | Scalability & performance | 77 |
+| UX & interaction design | 78 | | Answer quality & grounding | 73 |
+| Security posture | 78 | | Product value & business viability | 73 |
+| Cost efficiency | 78 | | Agentic capability | 72 |
+| Documentation & claim integrity | 78 | | Retrieval / RAG pipeline | 70 |
+| | | | Accessibility · Observability · Data quality | 68 |
+
+The panel's consensus: **engineering discipline outruns proven outcomes.** The structural dimensions score highest; the lowest scores cluster on *evidence of outcomes*. Three of the four criticals share one theme — headline claims not yet backed by the shipped artifact (the evidence gate false-refuses questions retrieval actually got right; the measured hybrid-retrieval gain isn't reachable in the shipped config; answer quality has never been run against a real model) — and the fourth is a live defect on the core interaction: the streaming answer floods screen readers, making it effectively unusable with assistive tech.
+
+Nothing is hidden: the **full record**, including every score with its reasoning, all 170 issues with evidence and recommended fixes, and the overall assessment, is published in-repo.
+
+📋 **[Expert Panel Review — scores, reasoning, assessment](docs/reviews/EXPERT-PANEL-2026-08.md)** · 🐛 **[Complete findings register (170 issues)](docs/reviews/EXPERT-PANEL-FINDINGS.md)** · 🗄 **[Raw machine-readable output](docs/reviews/expert-panel-2026-08.json)**
+
+Earlier adversarial rounds are recorded in [`docs/reviews/`](docs/reviews/) ([convergence log](docs/reviews/CONVERGENCE.md), [final audit](docs/reviews/FINAL-AUDIT.md)).
+
 ## ⚡ Performance (mock-LLM load test)
 
 The LLM is **mocked** (`LLM_MOCK=on`) so this measures HTTP transport, retrieval, streaming and concurrency — **not** model quality or inference latency, and it spends **zero** OpenRouter quota. Environment: win32 x64, 8 CPUs, Node v24 · 400 requests · concurrency 25.

@@ -44,21 +44,46 @@ correctly gate to non-`high` confidence — see `docs/EVALUATION.md`).
 
 ## Rate limiting
 
-In-memory token bucket (`src/lib/security/ratelimit.ts`), keyed by
-`ip|sessionId` (falls back to `anon` with no session yet), capacity
-`RATE_LIMIT_RPM` (default 20), refilled continuously (`capacity/60000` per
-ms, not a fixed-window reset). Applied before the orchestrator runs on both
-`/api/chat` and `/api/feedback`. A denied request gets HTTP 429 with a
-`retry-after`/`Retry-After` header computed from the bucket's actual deficit.
-The bucket map is swept (entries idle >120s dropped) once it exceeds 10,000
-keys, so it cannot grow unbounded under key churn. Documented single-instance
-ceiling, same swap point as the session store (`docs/DECISIONS.md` D5).
+In-memory token bucket (`src/lib/security/ratelimit.ts`), keyed by **client IP —
+never by anything the client can mint freely**, so rotating the `sessionId`
+cannot buy a fresh bucket (`tests/route-chat.test.ts` pins this).
+
+**Important default:** `clientIp()` only reads `x-forwarded-for` when
+`TRUST_PROXY=on`. With the shipped default (`off`) it returns the literal
+`'direct'` for **every** caller, so all direct clients share a *single* bucket —
+fail-closed against header spoofing, but it means one busy client can 429
+everyone else. Per-client limiting requires running behind a trusted proxy with
+`TRUST_PROXY=on`; the global backstop is otherwise the effective limit. Only the
+`on` path has test coverage (`tests/route-chat.test.ts` sets it in `beforeEach`).
+
+Capacity `RATE_LIMIT_RPM` (default 20), refilled continuously
+(`capacity/60000` per ms, not a fixed-window reset), with a **second global
+bucket** at 10× RPM across all clients as a spend backstop — a request denied by
+its own bucket never consumes a global token, so one throttled client cannot
+drain the shared budget. Applied before the orchestrator runs on `/api/chat`,
+`/api/feedback` and `/api/voice/transcribe`. A denied request gets HTTP 429 with
+a `retry-after` header computed from the bucket's actual deficit. The bucket map
+is swept (entries idle >120s dropped) once it exceeds 10,000 keys, so it cannot
+grow unbounded under key churn. Documented single-instance ceiling, same swap
+point as the session store (`docs/DECISIONS.md` D5).
+
+> Residual risk (panel finding `EP-SEC-03`): behind a proxy that *appends* to
+> `x-forwarded-for`, the leftmost hop is client-controlled, so `TRUST_PROXY=on`
+> lets a client mint buckets. The global backstop bounds the damage; taking the
+> right-most untrusted hop is the fix.
 
 ## Input / body limits
 
-- `MAX_BODY_BYTES` (default 64,000) is checked against the `content-length`
-  header **before** the request body is read (`src/app/api/chat/route.ts`) —
-  an oversized request is rejected without the server ever buffering it.
+- `MAX_BODY_BYTES` (default 64,000) is enforced **on the actual byte stream**,
+  not on the advisory `content-length` header (`readJsonCapped` in
+  `src/lib/security/validate.ts`): the reader counts bytes as they arrive,
+  throws `PayloadTooLargeError` (HTTP 413) the moment the cap is exceeded, and
+  cancels the stream so an oversize upload stops arriving. A chunked request
+  that omits or lies about `content-length` is therefore still capped
+  (`tests/route-chat.test.ts` proves the header path alone cannot save us).
+- Voice uploads are capped the same way before any multipart parsing
+  (`readBytesCapped`, `VOICE_MAX_BYTES` default 8 MB → 413), so a large body is
+  never buffered into memory by `formData()`.
 - `MAX_INPUT_CHARS` (default 8,000) caps the chat message length; enforced
   by a zod schema (`src/lib/security/validate.ts:parseChatRequest`) that
   also trims whitespace and rejects an empty message.

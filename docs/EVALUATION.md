@@ -2,17 +2,18 @@
 
 ## Dataset design
 
-`evals/cases/*.json` — 6 files (`edge.json`, `factual.json`, `howto.json`,
-`persian-english.json`, `troubleshooting.json`, `workflows.json`), **57
-cases** total, validated by schema tests (`tests/evals-schema.test.ts`:
-schema-conformant, ≥48 cases, unique ids, every `expectedSources` URL exists
-in the real docs link list `public/all-links-llms.txt`).
+`evals/cases/*.json` — 7 files (`edge.json`, `factual.json`, `howto.json`,
+`injection.json`, `persian-english.json`, `troubleshooting.json`,
+`workflows.json`), **61 cases** total, validated by schema tests
+(`tests/evals-schema.test.ts`: schema-conformant, ≥48 cases, unique ids, every
+`expectedSources` URL exists in the real docs link list
+`public/all-links-llms.txt`).
 
 Each case: `id`, `question`, `category`, `language` (`fa|en|mixed`),
 `expectedSources` (page paths — empty for gate-only cases), `expectedFacts`,
 `forbiddenClaims`, `shouldClarify`, optional `filters`.
 
-**Language split**: fa 37, en 15, mixed 5.
+**Language split**: fa 39, en 17, mixed 5.
 
 **20 categories**: `adversarial`, `ai-api`, `ambiguous`, `cross-service`,
 `database`, `deployment-workflow`, `domain-dns`, `english`, `error-log`,
@@ -20,9 +21,11 @@ Each case: `id`, `question`, `category`, `language` (`fa|en|mixed`),
 `persian`, `platform-specific`, `service-discovery`, `simple-factual`,
 `troubleshooting`, `unsupported`.
 
-9 cases carry an empty `expectedSources` — these are **gate cases**
-(`ambiguous` 2, `unsupported` 5, `adversarial` 2): the correct retrieval
+13 cases carry an empty `expectedSources` — these are **gate cases**
+(`ambiguous` 2, `unsupported` 5, `adversarial` 6): the correct retrieval
 behavior is *not* to come back `high`-confidence, not to hit a specific page.
+(Counts in this section are regenerated from `evals/cases/*.json`; the
+committed `evals/results/retrieval-2026-08-20.json` is the metric source of truth.)
 
 ## Retrieval metrics — real current results
 
@@ -92,7 +95,21 @@ because it calls `search()` with exactly the raw question.
 
 ## Known failure cases
 
-15 of the 48 sourced cases (31%) miss entirely at k=5 (`rank: null` in the
+**9** of the 48 sourced cases (**18.8%**) miss entirely at k=5 (`rank: null` in
+the committed results — consistent with hit@5 0.8125): `discover-analytics-tool`,
+`windows-vps`, `health-check-liara-json`, `bucket-keys`,
+`english-postgres-public-access`, `mixed-deploy-port-flag`, `ai-openai-connect`,
+`disk-full-app`, `build-fail-iran-packages`.
+
+The table below is the **historical** miss list from an earlier round, kept for
+its per-case "what ranked instead" analysis. Seven of its rows now rank inside
+k=5 (`cli-install` 2, `wordpress-one-click` 4, `nextjs-create-next-app-only`,
+`pg-econnrefused`, `nextjs-object-storage-uploads`, `liara-dns-setup`,
+`mixed-ai-baseurl`) and `windows-vps` is a miss it never listed — regenerate it
+from `cases[].rank === null` before quoting it as current. Panel finding
+`EP-DOCS-03`.
+
+Historically, 15 of the 48 sourced cases (31%) missed at k=5 (`rank: null` in the
 results file). Named, with what the retriever returned instead:
 
 | Case | Category | Expected | What ranked instead |
