@@ -109,9 +109,10 @@ All parsed and defaulted in `src/lib/config.ts`.
 | `MODEL_TIMEOUT_MS` | `30000` | Hard timeout per model call. |
 | `MODEL_MAX_RETRIES` | `2` | Retries on 429/500/502/503/504 and network/timeout errors. |
 | `COST_INPUT_PER_MTOK` / `COST_OUTPUT_PER_MTOK` | — | USD/1M tokens; enables `estimated_cost` in metrics. |
-| `RATE_LIMIT_RPM` | `20` | Token-bucket capacity per `ip\|sessionId`. |
+| `RATE_LIMIT_RPM` | `20` | Per-client-IP token bucket, plus a global 10× backstop. |
+| `TRUST_PROXY` | `off` | `on` only behind a proxy that sets `x-forwarded-for` (Liara LB). Default fail-closed. |
 | `MAX_INPUT_CHARS` | `8000` | Chat message length cap. |
-| `MAX_BODY_BYTES` | `64000` | Rejected before the body is even read. |
+| `MAX_BODY_BYTES` | `64000` | Enforced on the streamed body, not just the header. |
 | `DOCS_DIR` | `data/liara-docs` | Where `npm run sync-docs` clones the docs repo. |
 | `INDEX_DIR` | `data/index` | Built index artifacts. |
 | `RUNTIME_DIR` | `data/runtime` | `feedback.jsonl`, `gaps.jsonl`. |
