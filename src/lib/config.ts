@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import path from 'node:path';
+import { DEFAULT_EMBEDDINGS_MODEL } from '@/lib/ai/local-embeddings';
 
 const Env = z.object({
   // Model provider (OpenAI-compatible: OpenRouter, Liara AI, Ollama, OpenAI, ...)
@@ -12,7 +13,15 @@ const Env = z.object({
   AI_API_KEY: z.string().optional(),
   AI_MODEL_FAST: z.string().optional(), // default derives from provider (openrouter/free)
   AI_MODEL_SMART: z.string().optional(), // defaults to FAST
-  AI_EMBEDDINGS_MODEL: z.string().optional(), // unset = lexical-only retrieval
+  // Retrieval mode. Defaults to `local:` — the in-process multilingual e5 model,
+  // which needs NO API key and measurably dominates lexical on every metric
+  // (hit@1 45.8% → 60.4%, hit@5 83.3% → 85.4%, MRR 0.619 → 0.719, same
+  // false-refusal rate; see benchmarks/retrieval/ and docs/EVALUATION.md).
+  // Shipping the weakest mode we had benchmarked was finding EP-PRD-02.
+  // Set to '' (empty) to force lexical-only — no model download, no WASM in the
+  // server process, ~50 ms less per query. `npm run index` must be re-run after
+  // changing this, since it decides whether embeddings.json is built.
+  AI_EMBEDDINGS_MODEL: z.string().trim().default(DEFAULT_EMBEDDINGS_MODEL),
 
   // Deterministic mock LLM for load tests / offline dev (zero external calls).
   LLM_MOCK: z.enum(['on', 'off']).default('off'),
@@ -24,8 +33,21 @@ const Env = z.object({
   VOICE_MAX_BYTES: z.coerce.number().int().positive().default(8_000_000),
 
   VERIFY_CLAIMS: z.enum(['on', 'off']).default('on'),
+  // Connect / first-token bound for one attempt, AND the idle-gap bound between
+  // two streamed chunks. It is NOT a cap on total answer length — see below.
   MODEL_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   MODEL_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
+  // Deadline for ONE provider call including every retry and backoff. Each
+  // attempt gets min(MODEL_TIMEOUT_MS, remaining budget) and no attempt starts
+  // once the budget is spent, so a hung provider costs ~45s, not the ~91s the
+  // old unbounded 3 × MODEL_TIMEOUT_MS + backoff produced (REL-02). Two calls
+  // (plan + answer) then still fit inside the route's maxDuration = 120s.
+  MODEL_CALL_BUDGET_MS: z.coerce.number().int().positive().default(45_000),
+  // Total wall-clock a streaming answer BODY may take, once the first token has
+  // arrived. Separate from MODEL_TIMEOUT_MS so a legitimately long answer on a
+  // slow free route (1400 tokens at 10-30 tok/s = 47-140s) is not killed
+  // mid-sentence by the connect timeout (REL-03/COST-08).
+  MODEL_STREAM_TIMEOUT_MS: z.coerce.number().int().positive().default(90_000),
 
   // Cost accounting (USD per 1M tokens; optional, for estimated_cost metric)
   COST_INPUT_PER_MTOK: z.coerce.number().optional(),
@@ -86,7 +108,16 @@ export function config(): Config {
   const providerName: ProviderName = llmMock ? 'mock' : usingCustom ? 'custom' : usingOpenRouter ? 'openrouter' : 'none';
   const defaultModel = usingOpenRouter ? p.OPENROUTER_MODEL : 'openai/gpt-4.1-mini';
   const fastModel = p.AI_MODEL_FAST ?? defaultModel;
-  const smartModel = p.AI_MODEL_SMART ?? fastModel;
+  // Routing is only a cost lever if the two routes CAN differ (COST-03). When
+  // the operator ships our placeholder models on a generic (paid) endpoint,
+  // default SMART one tier up so the lever is real out of the box. Two cases
+  // deliberately keep smart = fast: OpenRouter (its default IS the free
+  // dynamic router — naming a paid slug there would break a free-tier key on
+  // ~30% of traffic, so the split is opt-in via AI_MODEL_SMART), and any
+  // operator who pinned AI_MODEL_FAST themselves (their endpoint may be Ollama
+  // or a single-model gateway where a second slug simply does not exist).
+  const smartModel =
+    p.AI_MODEL_SMART ?? (usingCustom && !p.AI_MODEL_FAST ? 'openai/gpt-4.1' : fastModel);
 
   cached = {
     ...p,

@@ -7,11 +7,16 @@ import type { AgentPlan, ModelProvider, SessionState, Usage } from '@/types';
 import { detectLanguage } from '@/lib/text/persian';
 import { planSystemPrompt } from '@/lib/agent/prompts';
 import { planRoute } from '@/lib/ai/router';
+import { log } from '@/lib/obs/log';
 
 const PlanSchema = z.object({
   intent: z.enum(['question', 'troubleshooting', 'workflow', 'followup', 'chitchat', 'unsupported']).catch('question'),
   language: z.enum(['fa', 'en']).catch('fa'),
   action: z.enum(['answer', 'clarify', 'insufficient', 'next_step', 'resolve']).catch('answer'),
+  // Every sub-object carries its OWN `.catch(undefined)`: one malformed limb
+  // (e.g. a delta-shaped troubleshooting patch, which the plan prompt actively
+  // invites) must drop only itself, never take context + profile + workflow
+  // down with it (EP-AGT-01).
   statePatch: z
     .object({
       profile: z
@@ -22,7 +27,8 @@ const PlanSchema = z.object({
           usesDocker: z.boolean().optional(),
         })
         .partial()
-        .optional(),
+        .optional()
+        .catch(undefined),
       context: z
         .object({
           product: z.string().max(40).optional(),
@@ -33,10 +39,13 @@ const PlanSchema = z.object({
           triedActions: z.array(z.string().max(200)).max(10).optional(),
         })
         .partial()
-        .optional(),
+        .optional()
+        .catch(undefined),
       troubleshooting: z
         .object({
-          problem: z.string().max(300),
+          // optional: a patch that only updates hypothesis statuses is valid and
+          // must not be discarded; makePlan restores the ORIGINAL problem below.
+          problem: z.string().max(300).optional(),
           hypotheses: z
             .array(
               z.object({
@@ -49,7 +58,8 @@ const PlanSchema = z.object({
           resolved: z.boolean().catch(false),
           rootCause: z.string().max(300).optional(),
         })
-        .optional(),
+        .optional()
+        .catch(undefined),
       workflow: z
         .object({
           goal: z.string().max(200),
@@ -64,11 +74,13 @@ const PlanSchema = z.object({
             )
             .max(12),
         })
-        .optional(),
+        .optional()
+        .catch(undefined),
       clearContext: z
         .array(z.enum(['platform', 'database', 'knownError', 'product']))
         .max(4)
-        .optional(),
+        .optional()
+        .catch(undefined),
     })
     .catch({}),
   retrievalQueries: z.array(z.string().max(200)).max(3).catch([]),
@@ -120,7 +132,48 @@ const PRODUCT_HINTS: [RegExp, string][] = [
 const ERROR_RE =
   /econnrefused|etimedout|enotfound|eaddrinuse|eacces|traceback|exception|stack trace|\b50[234]\b|\b4\d\d\b error|error:|failed|fail(s|ed|ing)?|خطا|ارور|اکسپشن|کرش|crash|نمی‌?شه|نمی‌?شود|نمی‌?کند|کار نمی‌?کن|بالا نمی‌?(آد|یاد|اد)|اجرا نمی‌?ش|مشکل دار|صادر نشد|پر شد|تعریف نشد|یافت نشد|not found|بیلد (نمی|خطا)|down|قطع (شد|می‌?ش)/i;
 
-const GREETING_RE = /^(سلام|درود|hi|hello|hey|صبح بخیر|وقت بخیر|خسته نباشید)[!.\s؟?]*$/i;
+// --- social / flow-control cues (all free, all keyless) ---
+// A greeting was previously matched anchored-exact, so "سلام، چطوری؟" and
+// "hi there" took the full plan+retrieve+answer path and then got the "no
+// reliable answer" refusal. Now: a social cue must be present AND almost
+// nothing must be left once the cue and its usual fillers are stripped — so
+// "ممنون، چطور دیتابیس بسازم؟" is still a real question (EP-AGT-11).
+const SOCIAL_CUE_RE =
+  /(سلام|درود|صبح بخیر|وقت بخیر|شب بخیر|خسته نباشید|مرسی|ممنون|سپاس|دمت گرم|\bhi\b|\bhello\b|\bhey\b|\bthanks?\b|thank you|\bthx\b|good (morning|evening))/i;
+const SOCIAL_FILLER_RE =
+  /(سلام|درود|صبح بخیر|وقت بخیر|شب بخیر|خسته نباشید|مرسی|ممنون|سپاس|دمت گرم|چطوری|چطورید|خوبی|بابت|از شما|خیلی|جان|عزیز|مشکل|حل شد|درست شد|رفع شد|hi|hello|hey|thanks?|thank you|thx|good (morning|evening)|how are you|there|mate|a lot|so much|for (the )?help|fixed|solved|works now|it works|you)/gi;
+
+// "it still doesn't work" — the product's own one-click follow-up sends the
+// literal string "هنوز حل نشده" (Feedback.tsx). Without this the turn falls out
+// of the Fix flow into a generic refusal (EP-AGT-04).
+const CONTINUATION_RE =
+  /(هنوز|بازم|باز هم|حل نشد|درست نشد|رفع نشد|فرقی نکرد|همون(\s|‌)?خطا|کار نکرد|still|didn'?t work|does ?n'?t work|not working|same error|no luck)/i;
+
+// "thanks, it's fixed" — the only deterministic termination condition a Fix
+// flow has when no model is available (EP-AGT-07).
+const RESOLVED_RE =
+  /(حل شد|درست شد|رفع شد|مشکل حل|مشکل رفع|درست کار می‌?کن|الان کار می‌?کن|solved|fixed|works now|it works|worked now|resolved)/i;
+
+// A past-tense check the user reports having already done — the single most
+// valuable anti-repetition signal, and empty on every fallback turn until now
+// (EP-AGT-09). Captures the clause around the verb, trimmed at punctuation.
+const TRIED_RE =
+  /([^.،؛\n]{0,120}?(?:چک کردم|بررسی کردم|امتحان کردم|تست کردم|ری‌?استارت کردم|ریستارت کردم|عوض کردم|ست کردم|تنظیم کردم|اضافه کردم|زدم|i (?:tried|checked|restarted|ran|already)|already (?:tried|checked|did)|tried|checked)[^.،؛\n]{0,80})/i;
+
+// Cheap experience / toolchain extraction so personalization is not a
+// model-only feature (EP-AGT-05b).
+const BEGINNER_RE = /تازه[‌\s]?کار|مبتدی|بلد نیستم|بلد نیس|تازه شروع|اولین بار|هیچی نمی‌?دونم|beginner|newbie|new to (this|liara)|never done/i;
+const ADVANCED_RE = /حرفه[‌\s]?ای|با ?تجربه|سال‌?هاست|می‌?دونم چطور|senior|experienced|advanced user|i know how/i;
+const PM_RE = /\b(npm|pnpm|yarn|bun)\b/i;
+
+/** Tokens left once social cues and their fillers are stripped. */
+function residualTokens(message: string): number {
+  return message
+    .replace(SOCIAL_FILLER_RE, ' ')
+    .replace(/[!.,،؛?؟:;\-—_()"'`]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
 
 // A stack term is NEGATED only when a negation cue sits DIRECTLY on it —
 // "not nextjs" / "instead of nextjs" (before) or "nextjs نیست" (after). This
@@ -132,7 +185,12 @@ const NEG_AFTER_RE = /^\s*(نیست|نبود|نمیخوام|رو عوض)/i;
 export interface DeterministicSignals {
   language: 'fa' | 'en';
   hasError: boolean;
-  isGreeting: boolean;
+  isGreeting: boolean; // greeting / thanks / pure sign-off — the free canned path
+  isContinuation: boolean; // "still broken" — keep the active Fix flow running
+  isResolved: boolean; // "it's fixed" — terminate the active Fix flow
+  triedAction?: string; // a check the user reports having already done
+  experience?: 'beginner' | 'intermediate' | 'advanced';
+  packageManager?: string;
   platform?: string;
   database?: string;
   product?: string;
@@ -176,10 +234,23 @@ export function preClassify(message: string): DeterministicSignals {
   let product = PRODUCT_HINTS.find(([re]) => re.test(message))?.[1];
   if (!product && platform) product = 'paas';
   if (!product && database) product = 'dbaas';
+  const hasError = ERROR_RE.test(message);
+  // "still not working" wins over "fixed": a message can carry both stems
+  // ("درست نشد" contains neither "درست شد" nor vice-versa, but "not fixed" does).
+  const isContinuation = CONTINUATION_RE.test(message);
+  const isResolved = !isContinuation && RESOLVED_RE.test(message);
+  const trimmed = message.trim();
+  const social = SOCIAL_CUE_RE.test(trimmed) || isResolved;
   return {
     language: detectLanguage(message),
-    hasError: ERROR_RE.test(message),
-    isGreeting: GREETING_RE.test(message.trim()),
+    hasError,
+    // a social opener/closer with (almost) no payload costs zero model calls
+    isGreeting: social && !hasError && !isContinuation && residualTokens(trimmed) <= 2,
+    isContinuation,
+    isResolved,
+    triedAction: TRIED_RE.exec(message)?.[1]?.trim().slice(0, 200) || undefined,
+    experience: BEGINNER_RE.test(message) ? 'beginner' : ADVANCED_RE.test(message) ? 'advanced' : undefined,
+    packageManager: PM_RE.exec(message)?.[1]?.toLowerCase(),
     platform,
     database,
     product,
@@ -194,13 +265,23 @@ export function fallbackPlan(message: string, s: DeterministicSignals, state: Se
   const negated = s.negatedPlatform || s.negatedDatabase;
   const platform = s.platform ?? (ownTopic || negated ? undefined : state.context.platform);
   const isDeploy = !s.hasError && DEPLOY_INTENT_RE.test(message);
+
+  // An unresolved ledger keeps ownership of the conversation: "هنوز حل نشده" /
+  // "بازم کار نمی‌کنه" carries no error signature of its own, so without this it
+  // classified as a plain question, retrieved against meaningless text and got
+  // the generic refusal — abandoning the flow the user was in (EP-AGT-04).
+  const active = state.troubleshooting && !state.troubleshooting.resolved ? state.troubleshooting : undefined;
+  const continuingFix = Boolean(active && (s.isContinuation || s.isResolved));
+
   const intent: AgentPlan['intent'] = s.isGreeting
     ? 'chitchat'
-    : s.hasError
+    : continuingFix
       ? 'troubleshooting'
-      : isDeploy
-        ? 'workflow'
-        : 'question';
+      : s.hasError
+        ? 'troubleshooting'
+        : isDeploy
+          ? 'workflow'
+          : 'question';
 
   const clearContext: NonNullable<AgentPlan['statePatch']['clearContext']> = [];
   // clear the old value ONLY when the negation named no replacement — if the
@@ -211,31 +292,77 @@ export function fallbackPlan(message: string, s: DeterministicSignals, state: Se
 
   // Deterministically seed the agentic state so Fix AND Guide are visible even
   // in keyless mode (no model to author it). Ranked hypotheses come from the
-  // error signature; workflow steps from a detected deploy intent.
-  const troubleshooting = s.hasError ? seedTroubleshooting(message, s) : undefined;
+  // error signature; workflow steps from a detected deploy intent. A follow-up
+  // inside an active flow ADVANCES the existing ledger instead of re-deriving a
+  // new one from the follow-up text (EP-AGT-03).
+  const troubleshooting = continuingFix
+    ? advanceLedger(active!, s.isResolved)
+    : s.hasError
+      ? seedTroubleshooting(message, s)
+      : undefined;
   const workflow = isDeploy ? seedWorkflow(s, platform, state) : undefined;
 
   return {
     intent,
     language: s.language,
-    action: isDeploy ? 'next_step' : 'answer',
+    action: s.isResolved && active ? 'resolve' : isDeploy ? 'next_step' : 'answer',
     statePatch: {
       context: {
         ...(s.platform ? { platform: s.platform } : {}),
         ...(s.database ? { database: s.database } : {}),
         ...(s.product ? { product: s.product } : {}),
-        ...(s.hasError ? { knownError: message.slice(0, 300) } : {}),
+        // never let a follow-up ("بازم کار نمی‌کنه") overwrite the ORIGINAL
+        // error text that the whole flow is diagnosing
+        ...(s.hasError && !continuingFix ? { knownError: message.slice(0, 300) } : {}),
+        ...(s.triedAction ? { triedActions: [s.triedAction] } : {}),
       } as SessionState['context'],
+      ...(s.experience || s.packageManager
+        ? {
+            profile: {
+              ...(s.experience ? { experience: s.experience } : {}),
+              ...(s.packageManager ? { packageManager: s.packageManager } : {}),
+            },
+          }
+        : {}),
       ...(clearContext.length ? { clearContext } : {}),
       ...(troubleshooting ? { troubleshooting } : {}),
       ...(workflow ? { workflow } : {}),
     },
-    retrievalQueries: s.isGreeting ? [] : [message.slice(0, 200)],
+    // a continuation carries no searchable content of its own — retrieve against
+    // the problem we are actually diagnosing, not "هنوز حل نشده"
+    retrievalQueries: s.isGreeting
+      ? []
+      : [((continuingFix && (state.context.knownError ?? active!.problem)) || message).slice(0, 200)],
     filters: {
       ...(platform ? { platform } : {}),
       ...(s.product && s.product !== 'paas' ? { product: s.product } : {}),
     },
   };
+}
+
+/**
+ * Advance an existing hypothesis ledger without a model: a negative follow-up
+ * rejects the hypothesis under test and promotes the next untested one; a
+ * positive one confirms it and closes the flow. The `problem` is carried over
+ * verbatim — it states what we are diagnosing, not what the user last typed.
+ */
+export function advanceLedger(
+  t: NonNullable<SessionState['troubleshooting']>,
+  resolved: boolean,
+): NonNullable<SessionState['troubleshooting']> {
+  const hypotheses = t.hypotheses.map((h) => ({ ...h }));
+  const current = hypotheses.find((h) => h.status === 'testing');
+  if (resolved) {
+    if (current) current.status = 'confirmed';
+    return { ...t, hypotheses, resolved: true, rootCause: t.rootCause ?? current?.text };
+  }
+  if (current) current.status = 'rejected';
+  // ponytail: promote the next untested hypothesis in rank order. When every
+  // hypothesis is exhausted the ledger simply has nothing `testing` — escalating
+  // (asking for logs, generating new hypotheses) needs the model.
+  const next = hypotheses.find((h) => h.status === 'untested');
+  if (next) next.status = 'testing';
+  return { ...t, hypotheses, resolved: false };
 }
 
 // Deterministic hypothesis seeding from the error signature — a ranked ledger,
@@ -300,7 +427,7 @@ function seedWorkflow(s: DeterministicSignals, platform: string | undefined, sta
   return { goal: 'استقرار پروژه روی لیارا', detected, steps };
 }
 
-function seedTroubleshooting(message: string, s: DeterministicSignals): SessionState['troubleshooting'] {
+function seedTroubleshooting(message: string, _s: DeterministicSignals): SessionState['troubleshooting'] {
   // prefer a specific bucket over a generic one even if the generic matches too
   const match = ERROR_HYPOTHESES.find((h) => h.specific && h.re.test(message)) ?? ERROR_HYPOTHESES.find((h) => h.re.test(message));
   const hyps = match?.hyps ?? [
@@ -317,12 +444,21 @@ function seedTroubleshooting(message: string, s: DeterministicSignals): SessionS
 
 // ---------------- model plan ----------------
 
+/** How the returned plan was produced (EP-OBS-02):
+ *  'deterministic' — no model call was attempted at all (no provider, or a free
+ *     greeting/thanks short-circuit) — this is by design, not a degradation.
+ *  'model'         — the planning model's structured call succeeded and parsed.
+ *  'fallback'      — a model call was attempted and silently degraded to the
+ *     regex-based fallbackPlan (unparseable JSON or a thrown ModelError); this
+ *     IS a quality degradation and must be observable. `reason` says why. */
+export type PlanRoute = 'deterministic' | 'model' | 'fallback';
+
 export async function makePlan(
   message: string,
   state: SessionState,
   provider: ModelProvider | null,
   signal?: AbortSignal,
-): Promise<{ plan: AgentPlan; usage: Usage; route: string }> {
+): Promise<{ plan: AgentPlan; usage: Usage; route: PlanRoute; reason?: string }> {
   const signals = preClassify(message);
   const fallback = fallbackPlan(message, signals, state);
   if (!provider || signals.isGreeting) return { plan: fallback, usage: zero(), route: 'deterministic' };
@@ -340,8 +476,17 @@ export async function makePlan(
       jsonSchema: {}, // request json mode
       signal,
     });
-    const parsed = PlanSchema.safeParse(extractJson(res.text));
-    if (!parsed.success) return { plan: fallback, usage: res.usage, route: 'fallback-after-parse-error' };
+    const raw = extractJson(res.text);
+    const parsed = PlanSchema.safeParse(raw);
+    if (!parsed.success) return { plan: fallback, usage: res.usage, route: 'fallback', reason: 'parse-error' };
+    // A delta-shaped troubleshooting patch may omit `problem`; restore the one
+    // the flow started with so the retained problem statement never drifts to
+    // whatever the last follow-up said (EP-AGT-01/EP-AGT-03).
+    const t = parsed.data.statePatch.troubleshooting;
+    if (t && !t.problem) t.problem = state.troubleshooting?.problem ?? message.slice(0, 200);
+    // a dropped limb is otherwise invisible: `route` still names the model
+    const dropped = droppedPatchKeys(raw, parsed.data.statePatch);
+    if (dropped.length) log('warn', 'plan_patch_partial', { dropped, route: route.model });
     const plan = parsed.data as AgentPlan;
     // deterministic signals win when the model missed them. Inherit the
     // session's platform ONLY when this message carries no product/database
@@ -353,12 +498,33 @@ export async function makePlan(
       const p = signals.platform ?? inherited;
       if (p) plan.filters.platform = p;
     }
+    // Deterministic flow-control also wins: an unresolved ledger owns a "still
+    // broken" follow-up even if the model called it a plain question, which
+    // would drop the user out of the Fix flow into a refusal (EP-AGT-04).
+    if (state.troubleshooting && !state.troubleshooting.resolved && signals.isContinuation) {
+      plan.intent = 'troubleshooting';
+      if (!plan.retrievalQueries.length) {
+        plan.retrievalQueries = [(state.context.knownError ?? state.troubleshooting.problem).slice(0, 200)];
+      }
+    }
+    // a check the user reports having done is worth keeping even when the model
+    // forgot to record it — it is the anti-repetition signal (EP-AGT-09)
+    if (signals.triedAction && !plan.statePatch.context?.triedActions?.length) {
+      plan.statePatch.context = { ...plan.statePatch.context, triedActions: [signals.triedAction] } as SessionState['context'];
+    }
     if (!plan.retrievalQueries.length && plan.action === 'answer') plan.retrievalQueries = [message.slice(0, 200)];
-    return { plan, usage: res.usage, route: route.model };
+    return { plan, usage: res.usage, route: 'model' };
   } catch (e) {
     if ((e as Error).name === 'ClientAbortError') throw e; // don't answer a gone client
-    return { plan: fallback, usage: zero(), route: 'fallback-after-model-error' };
+    return { plan: fallback, usage: zero(), route: 'fallback', reason: 'model-error' };
   }
+}
+
+/** statePatch keys the model sent that the schema rejected and dropped. */
+function droppedPatchKeys(raw: unknown, patch: Record<string, unknown>): string[] {
+  const sent = (raw as { statePatch?: Record<string, unknown> } | null)?.statePatch;
+  if (!sent || typeof sent !== 'object') return [];
+  return Object.keys(sent).filter((k) => sent[k] !== undefined && sent[k] !== null && patch[k] === undefined);
 }
 
 export function extractJson(text: string): unknown {

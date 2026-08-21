@@ -63,26 +63,27 @@ Press mic → speak → stop → see transcript → send. STT is **Soniox** (ser
 
 Measured, reproducible — **no fabricated numbers**.
 
-**Retrieval** (`evals/`, 61 fixed cases, lexical-only lower bound; the live pipeline adds LLM query rewriting):
+**Retrieval, as shipped** (`evals/`, 61 fixed cases, hybrid+rerank — the default configuration, no API key needed):
 
-| Metric | Recall@1 | Recall@3 | Recall@5 | MRR | Gate accuracy |
-|---|---:|---:|---:|---:|---:|
-| Value | 0.44 | 0.75 | **0.813** | 0.592 | **0.923** |
+| Metric | hit@1 | hit@3 | hit@5 | MRR | Gate accuracy | False-refusal |
+|---|---:|---:|---:|---:|---:|---:|
+| Value | **60.4%** | 79.2% | **85.4%** | **0.719** | 0.923 | **6.3%** |
 
-CI enforces floors (Recall@5 ≥ 0.66, gate ≥ 0.75) via exit code. Reproduce: `npm run benchmark:retrieval`.
+hit@5 carries a 95% CI of [0.728, 0.928] — at n=48 that width is honest and reported. Refusal-recall is **1.000** (every question the docs cannot answer is refused) and balanced accuracy **0.969**. CI enforces floors *and* a false-refusal ceiling via exit code, so a regression fails the run. Reproduce: `npm run benchmark:retrieval`.
 
-**Hybrid retrieval modes** — the four retrieval strategies scored on the 48 sourced eval cases with a **local** multilingual embedding model (`Xenova/multilingual-e5-small`, 384-d, no API key), all driven through the shipped `search()`:
+**Retrieval modes** — all five strategies on the 48 sourced cases, driven through the shipped `search()` with a **local** multilingual embedding model (`Xenova/multilingual-e5-small`, 384-d, no API key):
 
-| Retrieval mode | Recall@1 | Recall@3 | Recall@5 | MRR | p95 |
-|---|---:|---:|---:|---:|---:|
-| Lexical (BM25) | 43.8% | 72.9% | 77.1% | 0.582 | 38 ms |
-| Vector (cosine) | 52.1% | 72.9% | 79.2% | 0.629 | 22 ms |
-| Hybrid (RRF) | 56.3% | 77.1% | 79.2% | 0.661 | 55 ms |
-| **Hybrid + rerank** | **58.3%** | **77.1%** | **81.3%** | **0.676** | 54 ms |
+| Retrieval mode | hit@1 | hit@3 | hit@5 | recall@5 | MRR | p95 |
+|---|---:|---:|---:|---:|---:|---:|
+| Lexical (BM25) | 43.8% | 75.0% | 81.3% | 71.5% | 0.601 | 38 ms |
+| Lexical + rerank | 45.8% | 79.2% | 83.3% | 73.3% | 0.619 | 25 ms |
+| Vector (cosine) | 58.3% | 72.9% | 81.3% | 74.7% | 0.665 | 15 ms |
+| Hybrid (RRF) | 58.3% | 77.1% | 83.3% | 75.3% | 0.689 | 46 ms |
+| **Hybrid + rerank** ← shipped | **62.5%** | **83.3%** | **85.4%** | **77.4%** | **0.719** | 44 ms |
 
-Hybrid + rerank (the shipped ranker, with embeddings enabled) lifts Recall@1 from 43.8% → 58.3% and MRR 0.582 → 0.676 over pure lexical — vector and lexical signals are complementary, and reranking adds a further gain. Recall/MRR are deterministic; p95 is a single in-process run (includes local query-embedding time). Numbers are **model-specific** (local `multilingual-e5-small`); a different configured embeddings model may score differently. Evidence: [`benchmarks/retrieval/`](benchmarks/retrieval/). Reproduce: `npm run benchmark:retrieval-modes`.
+The signals are complementary and rerank adds a further gain, so the strongest measured mode is the one that ships. **Honesty note:** the benchmark runs McNemar tests between modes and at n=48 the *hit@5* differences are **not** statistically distinguishable (p ≥ 0.63) — the hit@1/MRR separation is the meaningful result, and a larger eval set is the documented next step. Numbers are model-specific. Evidence: [`benchmarks/retrieval/`](benchmarks/retrieval/) · reproduce: `npm run benchmark:retrieval-modes`.
 
-**Tests:** `192 passed / 20 files` (`npm test`) · typecheck clean · `npm run build` clean · `npm audit --omit=dev` **0 production vulnerabilities** (the local-embedding benchmark tooling pulls dev-only advisories that never ship).
+**Tests:** `370 passed / 32 files` (`npm test`) · `npm run lint` clean (0 errors, 0 warnings) · typecheck clean · `npm run build` clean · `npm audit --omit=dev` **0 production vulnerabilities** (the local-embedding + lint tooling pulls dev-only advisories that never ship).
 
 ## 🧑‍⚖️ Independent expert review
 
@@ -100,7 +101,22 @@ This codebase has been put through a **15-agent independent expert panel**. Each
 | Documentation & claim integrity | 78 | | Retrieval / RAG pipeline | 70 |
 | | | | Accessibility · Observability · Data quality | 68 |
 
-The panel's consensus: **engineering discipline outruns proven outcomes.** The structural dimensions score highest; the lowest scores cluster on *evidence of outcomes*. Three of the four criticals share one theme — headline claims not yet backed by the shipped artifact (the evidence gate false-refuses questions retrieval actually got right; the measured hybrid-retrieval gain isn't reachable in the shipped config; answer quality has never been run against a real model) — and the fourth is a live defect on the core interaction: the streaming answer floods screen readers, making it effectively unusable with assistive tech.
+The panel's consensus: **engineering discipline outruns proven outcomes.** The structural dimensions scored highest; the lowest clustered on *evidence of outcomes*.
+
+### Remediation — what has been fixed since
+
+**74 of 170 findings are closed** (plus 12 partial), including **3 of the 4 criticals** and **38 of the 47 highs** — each with a regression test. Live status for every finding: [`EXPERT-PANEL-STATUS.md`](docs/reviews/EXPERT-PANEL-STATUS.md).
+
+| Finding | Was | Now |
+|---|---|---|
+| `EP-ANS-01` 🔴 gate refused answerable questions | 17% false-refusal | **6.3%**, gate accuracy held |
+| `EP-RET-01` 🔴 measured hybrid gain unreachable | shipped lexical | **hybrid+rerank ships by default**, hit@1 43.8% → 60.4% |
+| `EP-A11Y-01` 🔴 streaming flooded screen readers | whole answer re-announced per token | live region restructured, message id stable |
+| `EP-SEC-01` 🟠 pasted secrets stored + served | verbatim in `feedback.jsonl` + `/api/diag` | redacted at every sink **and on read** |
+| `EP-MAINT-01` 🟠 no quality gate | no linter at all | `npm run lint` clean, 0 warnings |
+| `EP-SCALE-03` 🟠 benchmark measured a cheaper pipeline | 232 ms fiction | honest **cold 385 ms / cached 40 ms** |
+
+Test suite grew **192 → 370**. The one critical left open is `EP-PRD-01` — end-to-end answer quality has still never been measured, because that requires a real OpenRouter key this repo does not have. It is documented, not hidden.
 
 Nothing is hidden: the **full record**, including every score with its reasoning, all 170 issues with evidence and recommended fixes, and the overall assessment, is published in-repo.
 
@@ -114,11 +130,11 @@ The LLM is **mocked** (`LLM_MOCK=on`) so this measures HTTP transport, retrieval
 
 | Scenario | ok/err | Throughput | p50 | p95 | p99 |
 |---|---|---:|---:|---:|---:|
-| `/api/health` | 400 / 0 | 640 req/s | 36 ms | 52 ms | 56 ms |
-| `/api/chat` (full pipeline, streamed) | 400 / 0 | 104.5 req/s | 232 ms | 282 ms | 315 ms |
-| `/api/diag` | 400 / 0 | 255.3 req/s | 95 ms | 113 ms | 124 ms |
+| `/api/health` | 400 / 0 | 720.7 req/s | 32 ms | 51 ms | 65 ms |
+| `/api/chat` — **cold**, full pipeline | 400 / 0 | 64.2 req/s | 385 ms | 418 ms | 429 ms |
+| `/api/chat` — cached (zero model calls) | 400 / 0 | 596.1 req/s | 40 ms | 50 ms | 65 ms |
 
-Evidence: [`benchmarks/`](benchmarks/). Reproduce: `npm run benchmark:load`.
+The cold row uses a **unique question per request**, so every turn runs plan → retrieve → gate → stream → verify; the cached row repeats one question to exercise the zero-model-call path, which is **9.6× faster**. Both matter: the first is the honest worst case, the second is what the FAQ cache buys. (An earlier version of this table read 232 ms because the mock returned `{}` — collapsing the planner to a regex fallback and skipping verification entirely — and because repeated questions were silently served from cache. Both were panel findings, `EP-SCALE-03` and `EP-COST-02`.) Evidence: [`benchmarks/`](benchmarks/). Reproduce: `npm run benchmark:load`.
 
 ## 🔐 Security
 
@@ -126,7 +142,7 @@ Server-side keys only (`OPENROUTER_API_KEY`, `SONIOX_API_KEY` never reach the br
 
 ## 💰 Cost
 
-Generation defaults to the **OpenRouter Free Router** (`openrouter/free`, $0 on the free tier); the actual model per call is recorded because the router is dynamic. **Zero** LLM calls on greeting / cache hit / keyless / injection. Embeddings are off by default (lexical-only), so indexing is $0 unless enabled. Details: [`docs/COST.md`](docs/COST.md).
+Generation defaults to the **OpenRouter Free Router** (`openrouter/free`, $0 on the free tier); the actual model per call is recorded because the router is dynamic. **Zero** LLM calls on greeting / cache hit / keyless / injection — and the cache now actually fires (9.6× faster path, measured above). Embeddings are **$0 too**: the default model runs locally in-process, so hybrid retrieval costs no API spend at index or query time. Details: [`docs/COST.md`](docs/COST.md).
 
 ## 📈 Scalability
 

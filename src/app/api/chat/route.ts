@@ -13,6 +13,7 @@ import {
 import { consume } from '@/lib/security/ratelimit';
 import { config } from '@/lib/config';
 import { log } from '@/lib/obs/log';
+import { hashId } from '@/lib/security/hash';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
@@ -52,10 +53,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     requestId,
     // hash the client IP (PII) — a hash still lets ops correlate/rate-diagnose
     // a single client without storing the raw address (OBS-002)
-    ipHash: crypto.createHash('sha256').update(ip).digest('hex').slice(0, 12),
+    ipHash: hashId(ip),
     // never log the raw session id — it is the only session credential;
-    // 12-char prefix matches the hash length in request_metrics for joins
-    session: body.sessionId ? crypto.createHash('sha256').update(body.sessionId).digest('hex').slice(0, 12) : 'new',
+    // hashId matches the hash length in request_metrics for joins
+    session: body.sessionId ? hashId(body.sessionId) : 'new',
     chars: body.message.length,
   });
 

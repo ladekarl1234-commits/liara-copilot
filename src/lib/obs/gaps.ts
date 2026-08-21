@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from '@/lib/config';
+import { redactSecrets } from '@/lib/security/redact';
 
 export interface GapEntry {
   normalizedQuestion: string;
@@ -25,8 +26,20 @@ function gapsFile(): string {
   return path.join(config().RUNTIME_DIR, 'gaps.jsonl');
 }
 
+/** Max stored question length — a gap key is a topic, not a transcript. */
+const MAX_QUESTION_CHARS = 500;
+
 export function recordGap(entry: GapEntry): void {
-  const line = JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n';
+  // normalizedQuestion is verbatim user text on every call site (a question, or
+  // a feedback comment) and /api/diag serves it back. Redact HERE, at the one
+  // point all callers route through, so a new call site cannot forget
+  // (EP-SEC-01).
+  const line =
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      ...entry,
+      normalizedQuestion: redactSecrets(entry.normalizedQuestion).slice(0, MAX_QUESTION_CHARS),
+    }) + '\n';
   fs.promises
     .mkdir(config().RUNTIME_DIR, { recursive: true })
     .then(async () => {
@@ -63,10 +76,13 @@ export function readGapSummary(limit = 20): GapSummaryRow[] {
       continue; // torn write — skip
     }
     if (!e.normalizedQuestion || !e.reason) continue;
-    let row = byQuestion.get(e.normalizedQuestion);
+    // redact on READ as well: lines written before the sink was fixed are still
+    // on disk, and this is the surface that publishes them
+    const question = redactSecrets(e.normalizedQuestion).slice(0, MAX_QUESTION_CHARS);
+    let row = byQuestion.get(question);
     if (!row) {
-      row = { question: e.normalizedQuestion, count: 0, reasons: {} };
-      byQuestion.set(e.normalizedQuestion, row);
+      row = { question, count: 0, reasons: {} };
+      byQuestion.set(question, row);
     }
     row.count++;
     row.reasons[e.reason] = (row.reasons[e.reason] ?? 0) + 1;

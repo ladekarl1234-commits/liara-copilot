@@ -76,7 +76,7 @@ function walk(dir: string): string[] {
 
 export function parseLlmsFile(raw: string): { url: string; title: string; body: string } | null {
   const text = raw
-    .replace(/^﻿/, '')
+    .replace(/^\uFEFF/, '')
     .replace(/\r\n?/g, '\n')
     // inline base64 blobs are retrieval noise and blow up chunk/prompt budgets
     // (measured: one 48KB data:image URI in ai/ai-sdk-ui/chatbot.md)
@@ -180,7 +180,7 @@ export function chunkMarkdown(body: string, ctx: ChunkCtx): DocChunk[] {
 
 /** Split at paragraph boundaries; never inside a code fence; code block stays with the paragraph before it. */
 export function splitLong(text: string): string[] {
-  if (text.length <= MAX_CHUNK_CHARS) return [text];
+  if (text.length <= MAX_CHUNK_CHARS) return [closeDanglingFence(text)];
   const blocks: string[] = [];
   const lines = text.split('\n');
   let buf: string[] = [];
@@ -205,8 +205,11 @@ export function splitLong(text: string): string[] {
       acc = '';
     }
     acc += b + '\n';
-    // hard cap safety (same bound as the final slice, so the two agree)
-    if (acc.length > MAX_CHUNK_CHARS) {
+    // hard cap safety (same bound as the final slice, so the two agree) — but
+    // NEVER while a code fence is still open: flushing there is what produced
+    // 211 chunks carrying half a liara.json/CLI snippet (EP-RET-02). Carry the
+    // fence to its close; boundarySlice bounds the result either way.
+    if (acc.length > MAX_CHUNK_CHARS && fencesBalanced(acc)) {
       out.push(acc.trim());
       acc = '';
     }
@@ -217,23 +220,75 @@ export function splitLong(text: string): string[] {
   // resort — at a line/word boundary, never mid-word or mid-token. (The stored
   // chunk later gains a "## heading\n\n" prefix, so the final text can exceed
   // this by the heading length; the body itself is bounded here.)
-  return out.filter(Boolean).flatMap(boundarySlice);
+  return out.filter(Boolean).flatMap(boundarySlice).map(closeDanglingFence);
 }
 
-/** Split an over-cap piece at the last newline (then space) before the cap. */
+/**
+ * Last-resort repair of the invariant every chunk relies on: an unterminated
+ * fence in the SOURCE markdown (a handful of pages have one) would otherwise
+ * ship as evidence and teach the model to emit a half-open code block.
+ */
+export function closeDanglingFence(text: string): string {
+  return fencesBalanced(text) ? text : `${text}\n\`\`\``;
+}
+
+/** True when the text opens and closes every code fence it contains. */
+export function fencesBalanced(text: string): boolean {
+  return ((text.match(/^\s*```/gm) ?? []).length % 2) === 0;
+}
+
+const FENCE_CLOSE = '\n```';
+
+/**
+ * Split an over-cap piece at a line (then word) boundary, FENCE-AWARE: when the
+ * cut lands inside a code block the block is closed on the slice that ends and
+ * reopened (same info string) on the slice that follows, so no chunk is ever
+ * grounded on half a code snippet — the worst failure mode for a deployment
+ * assistant (EP-RET-02). An unterminated fence in the source is closed too.
+ */
 export function boundarySlice(piece: string): string[] {
   if (piece.length <= MAX_CHUNK_CHARS) return [piece];
   const out: string[] = [];
-  let rest = piece;
-  while (rest.length > MAX_CHUNK_CHARS) {
-    let cut = rest.lastIndexOf('\n', MAX_CHUNK_CHARS);
-    if (cut < MAX_CHUNK_CHARS * 0.7) cut = rest.lastIndexOf(' ', MAX_CHUNK_CHARS);
-    if (cut < MAX_CHUNK_CHARS * 0.7) cut = MAX_CHUNK_CHARS; // no boundary: hard cut
-    out.push(rest.slice(0, cut).trim());
-    rest = rest.slice(cut).trim();
+  let buf: string[] = [];
+  let len = 0;
+  let open: string | null = null; // the opening fence line while inside a block
+
+  const flush = () => {
+    if (!buf.length) return;
+    const body = (buf.join('\n') + (open ? FENCE_CLOSE : '')).trim();
+    if (body) out.push(body);
+    buf = open ? [open] : [];
+    len = open ? open.length + 1 : 0;
+  };
+
+  for (const line of splitOverlongLines(piece.split('\n'))) {
+    // reserve room for the closing fence we may have to append
+    const budget = MAX_CHUNK_CHARS - (open ? FENCE_CLOSE.length : 0);
+    if (buf.length && len + line.length + 1 > budget) flush();
+    buf.push(line);
+    len += line.length + 1;
+    if (/^\s*```/.test(line)) open = open === null ? line : null;
   }
-  if (rest) out.push(rest);
-  return out.filter(Boolean);
+  // tail: nothing to emit when only the carried-over opening fence is left
+  if (buf.length && !(buf.length === 1 && buf[0] === open)) flush();
+  return out;
+}
+
+/** Break any single line that cannot fit a slice, at a space then hard. */
+function splitOverlongLines(lines: string[]): string[] {
+  const cap = MAX_CHUNK_CHARS - FENCE_CLOSE.length;
+  const out: string[] = [];
+  for (const line of lines) {
+    let rest = line;
+    while (rest.length > cap) {
+      let cut = rest.lastIndexOf(' ', cap);
+      if (cut < cap * 0.7) cut = cap; // no boundary: hard cut
+      out.push(rest.slice(0, cut));
+      rest = rest.slice(cut).trimStart();
+    }
+    out.push(rest);
+  }
+  return out;
 }
 
 function classify(text: string): DocChunk['contentType'] {

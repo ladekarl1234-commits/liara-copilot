@@ -4,6 +4,7 @@
     "question": "آیا لیارا گواهی SSL رایگان میده؟ تمدیدش چطوریه؟",
     "category": "simple-factual",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/domains/enable-ssl"],
     "expectedFacts": [
       "SSL رایگان با یک کلیک از صفحه مدیریت دامنه فعال می‌شود",
@@ -17,6 +18,7 @@
     "question": "آدرس پیش‌فرض برنامه بعد از ساخت در لیارا چیه؟ میشه غیرفعالش کرد؟",
     "category": "simple-factual",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/domains/default-subdomain"],
     "expectedFacts": [
       "زیردامنه پیش‌فرض با پسوند liara.run ساخته می‌شود",
@@ -30,6 +32,7 @@
     "question": "How do I install the Liara CLI?",
     "category": "simple-factual",
     "language": "en",
+    "tunedOn": true,
     "expectedSources": ["https://docs.liara.ir/references/cli/install"],
     "expectedFacts": ["npm install -g @liara/cli", "requires Node.js/npm installed"],
     "forbiddenClaims": [],
@@ -40,6 +43,7 @@
     "question": "آیا ایمیل‌سرور لیارا از POP3 یا IMAP پشتیبانی می‌کنه؟",
     "category": "simple-factual",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/email-server/about"],
     "expectedFacts": [
       "پروتکل‌های POP3/IMAP پشتیبانی نمی‌شوند",
@@ -53,6 +57,7 @@
     "question": "Which PostgreSQL extensions does Liara offer?",
     "category": "database",
     "language": "en",
+    "tunedOn": false,
     "expectedSources": [
       "https://docs.liara.ir/dbaas/postgresql/quick-setup",
       "https://docs.liara.ir/dbaas/postgresql/extensions"
@@ -67,6 +72,7 @@
     "question": "آیا افزونه pgvector لیارا از ایندکس HNSW پشتیبانی می‌کنه؟",
     "category": "database",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/dbaas/postgresql/quick-setup"],
     "expectedFacts": ["افزونه pgvector لیارا از HNSW indexing پشتیبانی نمی‌کند"],
     "forbiddenClaims": ["HNSW پشتیبانی می‌شود"],
@@ -78,6 +84,7 @@
     "question": "می‌خوام یه جایگزین self-hosted برای گوگل آنالیتیکس روی لیارا راه بندازم. چی پیشنهاد میدید؟",
     "category": "service-discovery",
     "language": "fa",
+    "tunedOn": true,
     "expectedSources": ["https://docs.liara.ir/one-click-apps/matomo/quick-start"],
     "expectedFacts": ["Matomo به عنوان برنامه آماده (one-click) قابل راه‌اندازی است"],
     "forbiddenClaims": [],
@@ -88,6 +95,7 @@
     "question": "برای نگهداری فایل‌های آپلودی کاربرانم (عکس و ویدیو) کدوم سرویس لیارا مناسبه؟",
     "category": "service-discovery",
     "language": "fa",
+    "tunedOn": true,
     "expectedSources": ["https://docs.liara.ir/object-storage/about"],
     "expectedFacts": [
       "فضای ذخیره‌سازی ابری (Object Storage) لیارا",
@@ -101,6 +109,7 @@
     "question": "Does Liara offer Windows virtual machines?",
     "category": "english",
     "language": "en",
+    "tunedOn": true,
     "expectedSources": [
       "https://docs.liara.ir/iaas/windowsserver/choose-version",
       "https://docs.liara.ir/iaas/about"

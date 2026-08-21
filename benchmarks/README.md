@@ -16,8 +16,7 @@ npm run benchmark:retrieval    # == evaluate:retrieval
 ```
 
 Writes `evals/results/retrieval-<date>.json`. Latest (61 cases, lexical-only
-lower bound): **hit@1 0.44 · hit@3 0.75 · hit@5 0.813 · MRR 0.595 · gate accuracy
-0.923**. The runner enforces floors (hit@5 ≥ 0.66, gate ≥ 0.75) via exit code.
+shipped hybrid+rerank): **hit@1 60.4% · hit@3 85.4% · hit@5 85.4% · MRR 0.719 · gate 1.000 · false-refusal 6.3%**. The runner enforces floors (hit@5 ≥ 0.66, gate ≥ 0.75) via exit code.
 
 ## Hybrid retrieval modes (local embeddings)
 
@@ -27,18 +26,19 @@ npm run benchmark:retrieval-modes   # resumable; re-run until it prints the tabl
 
 Embeds every chunk once with a **local** multilingual model
 (`Xenova/multilingual-e5-small`, 384-d, Transformers.js — no API key), caches the
-vectors to `data/index/embeddings.json` (gitignored), then drives the shipped
-`search()` four ways via benchmark-only mode flags and scores the 48 sourced eval
+vectors to `.cache/retrieval-modes-embeddings.json` (gitignored; never the live `data/index/`), then drives the shipped
+`search()` five ways via benchmark-only mode flags and scores the 48 sourced eval
 cases. Writes `benchmarks/retrieval/modes-<date>.json`.
 
-### Latest run (`modes-2026-08-20.json`)
+### Latest run (`modes-2026-08-21-9514d96-dirty.json`)
 
-| Retrieval mode | Recall@1 | Recall@3 | Recall@5 | MRR | p50 | p95 |
-|---|---:|---:|---:|---:|---:|---:|
-| Lexical (BM25) | 43.8% | 72.9% | 77.1% | 0.582 | 15 ms | 38 ms |
-| Vector (cosine) | 52.1% | 72.9% | 79.2% | 0.629 | 13 ms | 22 ms |
-| Hybrid (RRF) | 56.3% | 77.1% | 79.2% | 0.661 | 25 ms | 55 ms |
-| Hybrid + rerank | **58.3%** | **77.1%** | **81.3%** | **0.676** | 28 ms | 54 ms |
+| Retrieval mode | hit@1 | hit@3 | hit@5 | recall@5 | MRR | p50 | p95 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Lexical (BM25) | 43.8% | 75.0% | 81.3% | 71.5% | 0.601 | 14 ms | 38 ms |
+| Lexical + rerank | 45.8% | 79.2% | 83.3% | 73.3% | 0.619 | 13 ms | 25 ms |
+| Vector (cosine) | 58.3% | 72.9% | 81.3% | 74.7% | 0.665 | 10 ms | 15 ms |
+| Hybrid (RRF) | 58.3% | 77.1% | 83.3% | 75.3% | 0.689 | 23 ms | 46 ms |
+| **Hybrid + rerank** ← shipped | 62.5% | 83.3% | 85.4% | 77.4% | 0.719 | 24 ms | 44 ms |
 
 Reading: vector and lexical are complementary (hybrid > either alone on Recall@1
 and MRR), and the deterministic rerank boosts add a further lift — hybrid+rerank
@@ -62,23 +62,24 @@ p95,p99,max,mean}}`. The LLM is **mocked** — this measures HTTP transport,
 retrieval, streaming, and concurrency, **not** model quality or model latency.
 Do **not** report these as OpenRouter inference throughput.
 
-### Latest run (see `load/load-2026-08-20.json` for full JSON)
+### Latest run (see `load/load-2026-08-21.json` for full JSON)
 
 Environment: win32 x64, 8 CPUs, Node v24 · 400 requests · concurrency 25 · mock LLM.
 
 | Scenario | ok/err | throughput | p50 | p95 | p99 |
 |---|---|---:|---:|---:|---:|
-| `/api/health` | 400 / 0 | 640 req/s | 36 ms | 52 ms | 56 ms |
-| `/api/chat` (full pipeline, streamed) | 400 / 0 | 104.5 req/s | 232 ms | 282 ms | 315 ms |
-| `/api/diag` | 400 / 0 | 255.3 req/s | 95 ms | 113 ms | 124 ms |
+| `/api/health` | 400 / 0 | 720.7 req/s | 32 ms | 51 ms | 65 ms |
+| `/api/chat` — cold (full pipeline) | 400 / 0 | 64.2 req/s | 385 ms | 418 ms | 429 ms |
+| `/api/chat` — cached (0 model calls) | 400 / 0 | 596.1 req/s | 40 ms | 50 ms | 65 ms |
 
-Percentiles are nearest-rank (`ceil(p/100·n)-1`). The `/api/chat` path runs the
-plan→retrieve→gate→stream→verify pipeline; under the mock the plan JSON parse
-falls back to the deterministic `fallbackPlan`, so retrieval + streaming are
-exercised but model-JSON parsing and real model latency are not.
-
-`/api/chat` runs the real plan→retrieve→gate→stream→verify pipeline with the mock
-model, so its latency reflects retrieval + orchestration + SSE, not a network LLM.
+Percentiles are nearest-rank (`ceil(p/100·n)-1`). The **cold** row sends a unique
+question per request so every turn runs the full plan→retrieve→gate→stream→verify
+pipeline; the **cached** row repeats one question to measure the zero-model-call
+path. The mock now returns a schema-valid plan and an answer long enough to
+trigger verification, so plan parsing and the verify call are both exercised
+(EP-SCALE-03) — an earlier version returned `{}`, silently collapsing to the
+regex fallback and skipping verification, which made this table flattering.
+Model latency is still mock, not real inference.
 
 ## Live model (separate, bounded)
 

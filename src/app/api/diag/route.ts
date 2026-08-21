@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from '@/lib/config';
+import { diagAuthorized } from '@/lib/security/validate';
 import { lastTraces } from '@/lib/obs/trace';
 import { readGapSummary } from '@/lib/obs/gaps';
 import { loadIndex } from '@/lib/retrieval/index';
@@ -21,9 +22,12 @@ function latestEval(): unknown {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const cfg = config();
-  if (!cfg.diagEnabled) {
+  // Same 404 whether diagnostics are off, prod has no DIAG_TOKEN set, or the
+  // presented token is wrong — the endpoint stays invisible either way, and a
+  // wrong token is not distinguishable from a disabled one (EP-SEC-07).
+  if (!diagAuthorized(req)) {
     return new NextResponse(null, { status: 404 });
   }
   let index: unknown = null;

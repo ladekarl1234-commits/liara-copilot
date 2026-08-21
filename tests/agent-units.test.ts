@@ -1,12 +1,12 @@
 // Unit tests for the model-output resilience + citation/injection layers that
 // the review found untested.
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { extractJson, preClassify, fallbackPlan } from '@/lib/agent/plan';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { extractJson, preClassify, fallbackPlan, makePlan } from '@/lib/agent/plan';
 import { citationsFromAnswer } from '@/lib/agent/orchestrator';
 import { sanitizeFences } from '@/lib/agent/prompts';
 import { resetConfigForTests } from '@/lib/config';
 import { getOrCreateSession, applyPatch, resetSessionsForTests } from '@/lib/state/sessions';
-import type { DocChunk, ScoredChunk, SessionState } from '@/types';
+import type { DocChunk, ModelProvider, ScoredChunk, SessionState } from '@/types';
 
 describe('extractJson', () => {
   it('parses bare JSON', () => {
@@ -204,5 +204,307 @@ describe('applyPatch — state hygiene (AG-001/AG-002)', () => {
     expect(s.troubleshooting).toBeTruthy();
     applyPatch(s, { context: { product: 'object-storage' } as SessionState['context'] }, 'fa', 'question');
     expect(s.troubleshooting).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Expert panel EP-AGT-01..12: agent state-machine correctness
+// ---------------------------------------------------------------------------
+
+const wf = (over?: Partial<NonNullable<SessionState['workflow']>>): NonNullable<SessionState['workflow']> => ({
+  goal: 'استقرار پروژه روی لیارا',
+  detected: ['django'],
+  steps: [{ id: 'w1', label: 'ساخت برنامه', status: 'current' }],
+  ...over,
+});
+
+describe('applyPatch — workflow lifecycle (EP-AGT-02)', () => {
+  beforeEach(() => resetSessionsForTests());
+
+  it('retires the Guide checklist on a topic switch instead of rendering it forever', () => {
+    const s = getOrCreateSession();
+    applyPatch(s, { context: { product: 'paas' } as SessionState['context'], workflow: wf() }, 'fa', 'workflow');
+    expect(s.workflow).toBeTruthy();
+    // unrelated later question about a different product
+    applyPatch(s, { context: { product: 'object-storage' } as SessionState['context'] }, 'fa', 'question');
+    expect(s.workflow).toBeUndefined();
+  });
+
+  it('keeps the checklist across a follow-up inside the same topic', () => {
+    const s = getOrCreateSession();
+    applyPatch(s, { context: { product: 'paas' } as SessionState['context'], workflow: wf() }, 'fa', 'workflow');
+    applyPatch(s, { context: {} as SessionState['context'] }, 'fa', 'followup');
+    expect(s.workflow).toBeTruthy();
+  });
+
+  it('retires a fully completed checklist on the next turn', () => {
+    const s = getOrCreateSession();
+    applyPatch(s, { workflow: wf({ steps: [{ id: 'w1', label: 'a', status: 'done' }] }) }, 'fa', 'workflow');
+    expect(s.workflow).toBeTruthy(); // completion is visible for one turn
+    applyPatch(s, { context: {} as SessionState['context'] }, 'fa', 'question');
+    expect(s.workflow).toBeUndefined();
+  });
+});
+
+describe('applyPatch — hypothesis ledger merge (EP-AGT-06)', () => {
+  beforeEach(() => resetSessionsForTests());
+
+  const seeded = () => {
+    const s = getOrCreateSession();
+    applyPatch(
+      s,
+      {
+        troubleshooting: {
+          problem: 'orig',
+          hypotheses: [
+            { id: 'h1', text: 'A', status: 'rejected' },
+            { id: 'h2', text: 'B', status: 'testing' },
+            { id: 'h3', text: 'C', status: 'untested' },
+          ],
+          resolved: false,
+        },
+      },
+      'fa',
+      'troubleshooting',
+    );
+    return s;
+  };
+
+  it('a shortened patch does NOT erase tested/rejected history', () => {
+    const s = seeded();
+    applyPatch(s, { troubleshooting: { problem: '', hypotheses: [{ id: 'h2', text: 'B', status: 'rejected' }], resolved: false } }, 'fa', 'troubleshooting');
+    const ids = s.troubleshooting!.hypotheses.map((h) => h.id).sort();
+    expect(ids).toEqual(['h1', 'h2', 'h3']);
+    expect(s.troubleshooting!.hypotheses.find((h) => h.id === 'h1')!.text).toBe('A'); // not reassigned
+    expect(s.troubleshooting!.hypotheses.find((h) => h.id === 'h2')!.status).toBe('rejected');
+    expect(s.troubleshooting!.problem).toBe('orig'); // empty problem never overwrites
+  });
+
+  it('orders the ledger so the hypothesis to act on is first', () => {
+    const s = seeded();
+    applyPatch(
+      s,
+      {
+        troubleshooting: {
+          problem: 'orig',
+          hypotheses: [
+            { id: 'h2', text: 'B', status: 'rejected' },
+            { id: 'h3', text: 'C', status: 'testing' },
+          ],
+          resolved: false,
+        },
+      },
+      'fa',
+      'troubleshooting',
+    );
+    expect(s.troubleshooting!.hypotheses[0].id).toBe('h3');
+    expect(s.troubleshooting!.hypotheses.at(-1)!.status).toBe('rejected');
+  });
+
+  it('a patch naming a DIFFERENT problem starts a fresh investigation', () => {
+    const s = seeded();
+    applyPatch(s, { troubleshooting: { problem: 'a totally different error', hypotheses: [{ id: 'h1', text: 'Z', status: 'testing' }], resolved: false } }, 'fa', 'troubleshooting');
+    expect(s.troubleshooting!.hypotheses).toHaveLength(1);
+    expect(s.troubleshooting!.problem).toBe('a totally different error');
+  });
+});
+
+describe('Fix-flow continuation (EP-AGT-03/04/07/09)', () => {
+  const withLedger = (): SessionState => ({
+    id: 'x',
+    language: 'fa',
+    profile: {},
+    context: { triedActions: [], knownError: 'connect ECONNREFUSED 127.0.0.1:5432', platform: 'nextjs' },
+    troubleshooting: {
+      problem: 'اپ ۵۰۲ می‌دهد',
+      hypotheses: [
+        { id: 'h1', text: 'پورت اشتباه', status: 'testing' },
+        { id: 'h2', text: 'کرش هنگام اجرا', status: 'untested' },
+        { id: 'h3', text: 'start command', status: 'untested' },
+      ],
+      resolved: false,
+    },
+    summary: '',
+    turns: 1,
+    updatedAt: 0,
+  });
+
+  it('the product\'s own one-click follow-up stays in the Fix flow', () => {
+    const msg = 'هنوز حل نشده'; // the literal string Feedback.tsx sends
+    const sig = preClassify(msg);
+    expect(sig.isContinuation).toBe(true);
+    const p = fallbackPlan(msg, sig, withLedger());
+    expect(p.intent).toBe('troubleshooting');
+    // retrieval runs against the real problem, not the meaningless follow-up
+    expect(p.retrievalQueries[0]).toContain('ECONNREFUSED');
+  });
+
+  it('other "still broken" phrasings are recognised too', () => {
+    for (const m of ['حل نشد', 'نه، درست نشد', 'still broken', "didn't work", 'بازم کار نمی‌کنه']) {
+      expect(preClassify(m).isContinuation, m).toBe(true);
+    }
+  });
+
+  it('advances the ledger and keeps the ORIGINAL problem statement', () => {
+    const st = withLedger();
+    const msg = 'پورت رو چک کردم درسته، ولی بازم کار نمی‌کنه';
+    const p = fallbackPlan(msg, preClassify(msg), st);
+    const t = p.statePatch.troubleshooting!;
+    expect(t.problem).toBe('اپ ۵۰۲ می‌دهد'); // not overwritten by the follow-up
+    expect(t.hypotheses.find((h) => h.id === 'h1')!.status).toBe('rejected');
+    expect(t.hypotheses.find((h) => h.id === 'h2')!.status).toBe('testing');
+    // and the original error text survives in context
+    expect(p.statePatch.context?.knownError).toBeUndefined();
+  });
+
+  it('records what the user already tried (EP-AGT-09)', () => {
+    const msg = 'پورت رو چک کردم درسته، ولی بازم کار نمی‌کنه';
+    expect(preClassify(msg).triedAction).toContain('چک کردم');
+    const p = fallbackPlan(msg, preClassify(msg), withLedger());
+    expect(p.statePatch.context?.triedActions?.[0]).toContain('چک کردم');
+    expect(preClassify('I already checked the PORT variable').triedAction).toBeTruthy();
+  });
+
+  it('a success cue terminates the flow deterministically (EP-AGT-07)', () => {
+    const msg = 'ممنون درست شد';
+    const sig = preClassify(msg);
+    expect(sig.isResolved).toBe(true);
+    const t = fallbackPlan(msg, sig, withLedger()).statePatch.troubleshooting!;
+    expect(t.resolved).toBe(true);
+    expect(t.hypotheses.find((h) => h.id === 'h1')!.status).toBe('confirmed');
+    expect(t.rootCause).toBe('پورت اشتباه');
+  });
+
+  it('"still not fixed" is a continuation, never a resolution', () => {
+    const sig = preClassify('هنوز درست نشد');
+    expect(sig.isContinuation).toBe(true);
+    expect(sig.isResolved).toBe(false);
+  });
+
+  it('after a rejection the head of the ledger is a NEW hypothesis (what the Fix message presents first)', () => {
+    resetSessionsForTests();
+    const s = getOrCreateSession();
+    Object.assign(s, withLedger(), { id: s.id });
+    expect(s.troubleshooting!.hypotheses[0].id).toBe('h1');
+    const msg = 'هنوز حل نشده';
+    const p = fallbackPlan(msg, preClassify(msg), s);
+    applyPatch(s, p.statePatch, 'fa', p.intent);
+    expect(s.troubleshooting!.hypotheses[0].id).toBe('h2'); // not the one just ruled out
+    expect(s.troubleshooting!.hypotheses[0].status).toBe('testing');
+    expect(s.troubleshooting!.hypotheses.map((h) => h.id).sort()).toEqual(['h1', 'h2', 'h3']); // history kept
+  });
+
+  it('does not hijack a continuation cue when no Fix flow is active', () => {
+    const base: SessionState = { id: 'x', language: 'fa', profile: {}, context: { triedActions: [] }, summary: '', turns: 0, updatedAt: 0 };
+    const p = fallbackPlan('هنوز حل نشده', preClassify('هنوز حل نشده'), base);
+    expect(p.intent).toBe('question');
+    expect(p.statePatch.troubleshooting).toBeUndefined();
+  });
+});
+
+describe('social openers/closers take the free path (EP-AGT-11)', () => {
+  it('recognises ordinary pleasantries, not just the exact word', () => {
+    for (const m of ['سلام', 'سلام، چطوری؟', 'hi there', 'مرسی', 'thanks!', 'ممنون بابت کمک']) {
+      expect(preClassify(m).isGreeting, m).toBe(true);
+    }
+  });
+  it('does NOT swallow a real question that opens with a pleasantry', () => {
+    for (const m of ['ممنون، چطور دیتابیس بسازم؟', 'سلام، اپ Next.js من بالا نمیاد', 'hi, how do I deploy a django app?']) {
+      expect(preClassify(m).isGreeting, m).toBe(false);
+    }
+  });
+});
+
+describe('statePatch is parsed limb-by-limb (EP-AGT-01)', () => {
+  const stub = (planJson: unknown): ModelProvider => ({
+    async generate() {
+      return { text: JSON.stringify(planJson), usage: { inputTokens: 1, outputTokens: 1 } };
+    },
+    async *generateStream() {
+      throw new Error('not used');
+    },
+    async embed() {
+      return [];
+    },
+  });
+
+  const state = (): SessionState => ({
+    id: 'x',
+    language: 'fa',
+    profile: {},
+    context: { triedActions: [] },
+    troubleshooting: { problem: 'اپ ۵۰۲ می‌دهد', hypotheses: [{ id: 'h1', text: 'پورت', status: 'testing' }], resolved: false },
+    summary: '',
+    turns: 1,
+    updatedAt: 0,
+  });
+
+  beforeEach(() => resetConfigForTests());
+
+  it('one invalid sub-object drops only itself, not context/profile/workflow', async () => {
+    const { plan } = await makePlan(
+      'خطای ۵۰۲ دارم',
+      state(),
+      stub({
+        intent: 'troubleshooting',
+        language: 'fa',
+        action: 'answer',
+        statePatch: {
+          context: { platform: 'nextjs', product: 'paas' },
+          profile: { experience: 'beginner' },
+          troubleshooting: { hypotheses: 'not an array' }, // malformed limb
+        },
+        retrievalQueries: ['۵۰۲'],
+        filters: {},
+      }),
+    );
+    expect(plan.statePatch.context?.platform).toBe('nextjs');
+    expect(plan.statePatch.profile?.experience).toBe('beginner');
+    expect(plan.statePatch.troubleshooting).toBeUndefined(); // only the bad limb is gone
+  });
+
+  it('a delta-shaped troubleshooting patch keeps the ORIGINAL problem', async () => {
+    const { plan } = await makePlan(
+      'بازم کار نمی‌کنه',
+      state(),
+      stub({
+        intent: 'troubleshooting',
+        language: 'fa',
+        action: 'answer',
+        // no `problem` — exactly what the plan prompt asks the model to send
+        statePatch: { troubleshooting: { hypotheses: [{ id: 'h1', text: 'پورت', status: 'rejected' }], resolved: false } },
+        retrievalQueries: [],
+        filters: {},
+      }),
+    );
+    expect(plan.statePatch.troubleshooting?.problem).toBe('اپ ۵۰۲ می‌دهد');
+    expect(plan.statePatch.troubleshooting?.hypotheses[0].status).toBe('rejected');
+  });
+
+  it('an unresolved ledger keeps a "still broken" follow-up in the Fix flow even when the model misclassifies it', async () => {
+    const st = state();
+    st.context.knownError = 'connect ECONNREFUSED 127.0.0.1:5432';
+    const { plan } = await makePlan(
+      'هنوز حل نشده',
+      st,
+      stub({ intent: 'question', language: 'fa', action: 'answer', statePatch: {}, retrievalQueries: [], filters: {} }),
+    );
+    expect(plan.intent).toBe('troubleshooting');
+    expect(plan.retrievalQueries[0]).toContain('ECONNREFUSED');
+  });
+});
+
+describe('deterministic personalization (EP-AGT-05)', () => {
+  const base = (): SessionState => ({ id: 'x', language: 'fa', profile: {}, context: { triedActions: [] }, summary: '', turns: 0, updatedAt: 0 });
+
+  it('infers experience and package manager without a model', () => {
+    const msg = 'من تازه‌کارم و اصلا بلد نیستم، با pnpm کار می‌کنم';
+    const p = fallbackPlan(msg, preClassify(msg), base());
+    expect(p.statePatch.profile?.experience).toBe('beginner');
+    expect(p.statePatch.profile?.packageManager).toBe('pnpm');
+  });
+  it('leaves the profile alone when the message says nothing about the user', () => {
+    const msg = 'قیمت object storage چنده؟';
+    expect(fallbackPlan(msg, preClassify(msg), base()).statePatch.profile).toBeUndefined();
   });
 });

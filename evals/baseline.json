@@ -1,0 +1,38 @@
+{
+  "note": "ACCEPTED regression baseline. scripts/evaluate.ts DERIVES its CI floors from these numbers — each metric minus exactly one case of slack (falseRefusalRate plus one case) — so a floor can never drift away from the value it protects. Moving a floor therefore means editing this file, which is a visible diff. Re-baseline only from a run you have actually read: copy the headline block of the evals/results/retrieval-<date>-<sha>.json you are accepting.",
+  "derivedFloors": {
+    "hit5": "(hit5 * sourced - 1) / sourced = 38/48 = 0.792",
+    "mrr": "(mrr * sourced - 1) / sourced = 0.571",
+    "evidenceRecall": "(evidenceRecall * sourced - 1) / sourced = 38/48 = 0.792",
+    "refusalRecall": "(refusalRecall * gateCases - 1) / gateCases = 9/11 = 0.818",
+    "falseRefusalMax": "(falseRefusalRate * sourced + 1) / sourced = 4/48 = 0.083"
+  },
+  "measuredAt": "2026-08-21",
+  "runId": "2026-08-21-9514d96-dirty",
+  "commit": "9514d96a9698960c785cf9cbfd296f933356f58c",
+  "index": {
+    "docsCommit": "31f2ef7adce565341d7eba43492ef5b4f63a7d73",
+    "chunkCount": 3746
+  },
+  "retrievalMode": "hybrid+rerank",
+  "sourced": 48,
+  "gateCases": 13,
+  "hit1": 0.6041666666666666,
+  "hit3": 0.8541666666666666,
+  "hit5": 0.8541666666666666,
+  "mrr": 0.71875,
+  "evidenceRecall": 0.875,
+  "refusalRecall": 1,
+  "ambiguousAccuracy": 1,
+  "falseRefusalRate": 0.0625,
+  "acceptedDebt": "refusalRecall is now 11/11 on this run; the previously accepted 10/11 debt no longer applies at this configuration, but the floor still allows one regression case before failing.",
+  "corpusCaveat": "docsCommit is the ONLY handle on the corpus these numbers were measured against — data/liara-docs and data/index are gitignored, and scripts/sync-docs.mjs pulls upstream HEAD. evaluate.ts warns when the index docsCommit differs from the one above, so a floor failure caused by upstream docs moving can be told apart from a code regression.",
+  "rebaselinedFrom": {
+    "runId": "2026-08-20-9514d96",
+    "retrievalMode": "lexical+rerank",
+    "hit1": 0.4375,
+    "hit5": 0.8125,
+    "mrr": 0.5920138888888888
+  },
+  "rebaselineReason": "Re-baselined after the expert-panel remediation made hybrid+rerank the shipped default (EP-PRD-02/EP-RET-01). The previous baseline encoded lexical-only numbers, so a silent regression all the way back to lexical would have PASSED CI — the gains would not have been protected. Floors are still derived as measured-minus-one-case."
+}

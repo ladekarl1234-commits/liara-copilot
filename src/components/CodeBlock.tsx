@@ -76,8 +76,11 @@ export default function CodeBlock({
           {copied ? <CheckIcon /> : <CopyIcon />}
         </button>
       </div>
-      <pre>
-        <code ref={codeRef} className={codeClassName}>
+      {/* tabIndex: a horizontally scrollable box holding no focusable content is
+          unreachable by keyboard and cannot be panned (SC 2.1.1). lang="en" stops
+          a Persian voice from reading shell commands with Persian phonemes. */}
+      <pre tabIndex={0} role="group" aria-label={language ? `کد ${language}` : 'کد'}>
+        <code ref={codeRef} className={codeClassName} lang="en">
           {children}
         </code>
       </pre>

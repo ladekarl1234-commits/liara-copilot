@@ -32,7 +32,7 @@ metrics and the internal trace — never fabricating reproducibility.
 ## Evidence
 
 - Keyless path verified (degraded grounded-sources mode, 0 model calls).
-- Mock path verified under load: chat 400/400 ok, p50 232 ms / p95 282 ms
+- Mock path verified under load: chat 400/400 ok, cold p50 385 ms / cached p50 40 ms
   (`benchmarks/load/`), exercising retrieval + streaming without spending quota.
 - `tests/ai-provider-config.test.ts` proves provider resolution + actual-model
   reporting via `onMeta`.

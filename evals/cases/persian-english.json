@@ -4,6 +4,7 @@
     "question": "دو تا برنامه دارم که باید به هم درخواست بزنن. توی لیارا چطور بهم وصلشون کنم؟",
     "category": "persian",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/details/private-network"],
     "expectedFacts": [
       "هر دو برنامه را در یک شبکه خصوصی قرار دهید",
@@ -18,6 +19,7 @@
     "question": "فایل liara.json چیه و چطور بسازمش؟",
     "category": "persian",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/liarajson"],
     "expectedFacts": [
       "فایل پیکربندی استقرار در مسیر اصلی پروژه است",
@@ -32,6 +34,7 @@
     "question": "Where can I see and edit my app's environment variables on Liara?",
     "category": "english",
     "language": "en",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/details/envs"],
     "expectedFacts": [
       "in the console under the app's settings, variables section",
@@ -46,6 +49,7 @@
     "question": "How can I connect to my Liara PostgreSQL database from my laptop (outside Liara)?",
     "category": "english",
     "language": "en",
+    "tunedOn": true,
     "expectedSources": ["https://docs.liara.ir/dbaas/postgresql/quick-setup"],
     "expectedFacts": [
       "enable public network access for the database",
@@ -60,6 +64,7 @@
     "question": "فلگ --port توی دستور liara deploy دقیقا what does it do؟ کی لازمه؟",
     "category": "mixed",
     "language": "mixed",
+    "tunedOn": true,
     "expectedSources": [
       "https://docs.liara.ir/references/cli/deploy-app",
       "https://docs.liara.ir/paas/dotnet/fix-common-errors/502-bad-gateway"
@@ -75,6 +80,7 @@
     "question": "چطور access level باکتم رو از private به public تغییر بدم؟",
     "category": "mixed",
     "language": "mixed",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/object-storage/how-tos/change-access-level"],
     "expectedFacts": [
       "از قسمت تنظیمات باکت، بخش تغییر سطح دسترسی"
@@ -88,6 +94,7 @@
     "question": "baseUrl سرویس هوش مصنوعی لیارا رو از کجا بیارم و چه شکلیه؟",
     "category": "ai-api",
     "language": "mixed",
+    "tunedOn": true,
     "expectedSources": ["https://docs.liara.ir/ai/quick-start"],
     "expectedFacts": [
       "پس از ساخت سرویس، baseUrl با آدرس آغازین https://ai.liara.ir تعلق می‌گیرد",
@@ -102,6 +109,7 @@
     "question": "How do I use OpenAI GPT models through Liara's AI service in my code?",
     "category": "ai-api",
     "language": "en",
+    "tunedOn": true,
     "expectedSources": [
       "https://docs.liara.ir/ai/openai",
       "https://docs.liara.ir/ai/quick-start"

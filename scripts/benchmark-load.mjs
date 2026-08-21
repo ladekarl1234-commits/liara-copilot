@@ -107,17 +107,38 @@ async function main() {
   console.log(`load test → ${BASE_URL}  (total=${TOTAL} concurrency=${CONCURRENCY})\n`);
 
   const scenarios = [];
+  const postChat = (message) =>
+    fetch(`${BASE_URL}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message }),
+    }).then(drain);
+
   scenarios.push(await run('health', () => fetch(`${BASE_URL}/api/health`).then(drain)));
+
+  // chat-cold: a UNIQUE question per request, so every turn runs the whole
+  // pipeline (plan -> retrieve -> gate -> stream -> verify). Reusing 5 questions
+  // made ~99% of requests FAQ-cache hits once EP-COST-02 widened eligibility,
+  // which measured the cache rather than the product (the same measurement bug
+  // EP-SCALE-03 described).
   scenarios.push(
-    await run('chat', (i) =>
-      fetch(`${BASE_URL}/api/chat`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ message: QUESTIONS[i % QUESTIONS.length] }),
-      }).then(drain),
-    ),
+    await run('chat-cold', (i) => postChat(`${QUESTIONS[i % QUESTIONS.length]} (نسخه ${i})`)),
   );
-  scenarios.push(await run('diag', () => fetch(`${BASE_URL}/api/diag`).then(drain)));
+  // chat-cached: the same question every time — the zero-model-call path.
+  scenarios.push(await run('chat-cached', () => postChat(QUESTIONS[0])));
+
+  // /api/diag requires a bearer token in production (EP-SEC-07); without one it
+  // correctly refuses, so the scenario is skipped rather than recorded as error.
+  const diagToken = process.env.DIAG_TOKEN;
+  if (diagToken) {
+    scenarios.push(
+      await run('diag', () =>
+        fetch(`${BASE_URL}/api/diag`, { headers: { authorization: `Bearer ${diagToken}` } }).then(drain),
+      ),
+    );
+  } else {
+    console.log('diag       skipped (set DIAG_TOKEN to include it)');
+  }
 
   let commit = 'unknown';
   try {

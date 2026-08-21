@@ -15,6 +15,17 @@
 const pipes = new Map<string, Promise<any>>();
 
 export const DEFAULT_LOCAL_EMBED_MODEL = 'Xenova/multilingual-e5-small';
+
+/**
+ * The default value of AI_EMBEDDINGS_MODEL — i.e. hybrid retrieval, on, with no
+ * API key required. It lives HERE (a module with no config dependency) because
+ * two independent readers need the same answer and must not drift:
+ *   - `config()`'s zod schema, for everything that goes through Config;
+ *   - `loadIndex()`, which deliberately reads process.env directly so that
+ *     loading an index never materializes/freezes the config singleton.
+ * Setting the variable to an empty string opts out to lexical-only.
+ */
+export const DEFAULT_EMBEDDINGS_MODEL = 'local:';
 export const LOCAL_EMBED_DIM = 384;
 
 async function getPipe(model: string) {

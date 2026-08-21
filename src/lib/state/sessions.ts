@@ -3,7 +3,7 @@
 // for Redis-compatible storage behind these four functions when scaling out.
 
 import crypto from 'node:crypto';
-import type { AgentPlan, SessionState } from '@/types';
+import type { AgentPlan, Hypothesis, SessionState } from '@/types';
 import { redactSecrets } from '@/lib/security/redact';
 
 const MAX_SESSIONS = 5000;
@@ -70,7 +70,18 @@ export function applyPatch(
     topicSwitched
   ) {
     if (!patch.context?.knownError) s.context.knownError = undefined;
-    if (topicSwitched) s.troubleshooting = undefined;
+    if (topicSwitched) {
+      s.troubleshooting = undefined;
+      // the Guide checklist was never retired, so one deploy question left a
+      // 7-step list rendering above every later answer for the whole 24h
+      // session, with step w1 permanently `current` (EP-AGT-02)
+      if (!patch.workflow) s.workflow = undefined;
+    }
+  }
+  // a finished checklist renders once (all steps done) and is retired on the
+  // NEXT turn, so completion is visible but does not become decoration
+  if (!patch.workflow && s.workflow?.steps.length && s.workflow.steps.every((st) => st.status === 'done')) {
+    s.workflow = undefined;
   }
 
   if (patch.context) {
@@ -92,12 +103,46 @@ export function applyPatch(
 
   if (patch.troubleshooting) {
     patch.troubleshooting.hypotheses = (patch.troubleshooting.hypotheses ?? []).slice(0, 8);
-    s.troubleshooting = patch.troubleshooting;
+    s.troubleshooting = mergeLedger(s.troubleshooting, patch.troubleshooting);
   }
   if (patch.workflow) {
     patch.workflow.steps = (patch.workflow.steps ?? []).slice(0, 12);
     s.workflow = patch.workflow;
   }
+}
+
+const LEDGER_RANK: Record<Hypothesis['status'], number> = { confirmed: 0, testing: 1, untested: 2, rejected: 3 };
+
+/**
+ * Merge a hypothesis ledger by id instead of replacing it wholesale: the
+ * ledger's whole value is remembering what has been ruled out, and one terse
+ * model turn used to erase that (EP-AGT-06). A patch that names a DIFFERENT
+ * problem is a new investigation and does replace.
+ * The result is ordered confirmed → testing → untested → rejected so the head
+ * of the list is always the hypothesis to act on (what the Fix message and the
+ * hypothesis panel present first).
+ */
+function mergeLedger(
+  prev: SessionState['troubleshooting'],
+  patch: NonNullable<SessionState['troubleshooting']>,
+): NonNullable<SessionState['troubleshooting']> {
+  const newProblem = patch.problem?.trim();
+  const sameFlow = prev && (!newProblem || newProblem === prev.problem);
+  const merged: Hypothesis[] = sameFlow ? prev.hypotheses.map((h) => ({ ...h })) : [];
+  for (const h of patch.hypotheses) {
+    const existing = merged.find((m) => m.id === h.id);
+    if (existing) {
+      existing.status = h.status;
+      if (h.text) existing.text = h.text;
+    } else merged.push({ ...h });
+  }
+  merged.sort((a, b) => LEDGER_RANK[a.status] - LEDGER_RANK[b.status]);
+  return {
+    problem: newProblem || prev?.problem || '',
+    hypotheses: merged.slice(0, 8),
+    resolved: patch.resolved,
+    rootCause: patch.rootCause ?? (sameFlow ? prev.rootCause : undefined),
+  };
 }
 
 /** Rolling compact summary instead of full history in every model call. */

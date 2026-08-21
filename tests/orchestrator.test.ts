@@ -221,7 +221,12 @@ describe('orchestrator', () => {
     expect(text).toContain('OPENROUTER_API_KEY');
   });
 
-  it('maps provider failure to a useful error event', async () => {
+  it('serves degraded sources instead of a bare error when retrieval already succeeded (EP-REL-01)', async () => {
+    // Retrieval for this query hits the 'envs#0' fixture chunk with good
+    // confidence, so once the answer call itself fails the pipeline has
+    // usable evidence in hand — it must not discard it. This test previously
+    // asserted the OLD (buggy) behaviour, a bare `error` event even with good
+    // evidence; updated to the fixed behaviour per EP-REL-01.
     setProviderForTests({
       async generate() {
         // plan call succeeds so the pipeline reaches the answer stage
@@ -237,7 +242,6 @@ describe('orchestrator', () => {
           usage: { inputTokens: 5, outputTokens: 5 },
         };
       },
-      // eslint-disable-next-line require-yield
       async *generateStream() {
         throw new ModelError('model_unavailable', 'down');
       },
@@ -246,10 +250,11 @@ describe('orchestrator', () => {
       },
     });
     const events = await run('چطور متغیر محیطی اضافه کنم؟');
-    const err = events.find((e) => e.type === 'error') as Extract<ChatEvent, { type: 'error' }>;
-    expect(err).toBeTruthy();
-    expect(err.code).toBe('model_unavailable');
-    expect(err.message).toMatch(/دسترس/);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    const cit = events.find((e) => e.type === 'citations') as Extract<ChatEvent, { type: 'citations' }>;
+    expect(cit, 'sources-only fallback must still attach citations').toBeTruthy();
+    expect(cit.citations.length).toBeGreaterThan(0);
+    expect(events.at(-1)?.type).toBe('done');
   });
 
   it('emits a workflow checklist event when the plan builds one', async () => {

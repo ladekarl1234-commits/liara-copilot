@@ -5,7 +5,8 @@
 
 import { z } from 'zod';
 import type { ModelProvider, ScoredChunk, Usage } from '@/types';
-import { verifySystemPrompt, evidenceBlock } from '@/lib/agent/prompts';
+import { verifySystemPrompt, sanitizeFences } from '@/lib/agent/prompts';
+import { citationUrl } from '@/lib/retrieval/index';
 import { extractJson } from '@/lib/agent/plan';
 import { config } from '@/lib/config';
 
@@ -39,7 +40,7 @@ export async function verifyAnswer(
         { role: 'system', content: verifySystemPrompt() },
         {
           role: 'user',
-          content: `<evidence>\n${evidenceBlock(evidence)}\n</evidence>\n\n<answer>\n${answer.slice(0, 6000)}\n</answer>`,
+          content: `<evidence>\n${sanitizeFences(citedEvidenceBlock(answer, evidence))}\n</evidence>\n\n<answer>\n${answer.slice(0, 6000)}\n</answer>`,
         },
       ],
       maxTokens: 400,
@@ -59,4 +60,38 @@ export async function verifyAnswer(
   } catch {
     return skip;
   }
+}
+
+/**
+ * Evidence for the verify call = only the chunks the answer actually cited.
+ *
+ * A claim can only be grounded in a chunk the answer referenced, so re-sending
+ * all 8 chunks (the identical text the answer call was handed seconds earlier)
+ * bought nothing and was 42% of per-turn input tokens (COST-01). Typically 2-3
+ * of 8 survive, and the checker keeps full checking power: an unsupported claim
+ * is precisely one that no cited chunk backs.
+ *
+ * Marker numbers are PRESERVED (`[3]` stays `[3]`), never renumbered — the
+ * checker reads the answer's own markers and must land on the same source.
+ * Fallback when the answer cites nothing: the top 3, the same set
+ * citationsFromAnswer() shows the user in that case.
+ */
+export function citedEvidenceBlock(answer: string, evidence: ScoredChunk[]): string {
+  // markers are scanned OUTSIDE code fences/inline code so `argv[2]` is not a
+  // citation — same rule as citationsFromAnswer (duplicated rather than
+  // imported: verify.ts <- orchestrator.ts would be an import cycle).
+  // ponytail: 6 duplicated lines; lift into retrieval/index.ts if a third caller appears.
+  const prose = answer.replace(/```[\s\S]*?(```|$)/g, ' ').replace(/`[^`\n]*`/g, ' ');
+  const picked = new Set<number>();
+  for (const m of prose.matchAll(/\[(\d{1,2})\]/g)) {
+    const n = Number(m[1]);
+    if (n >= 1 && n <= evidence.length) picked.add(n);
+  }
+  const items = picked.size
+    ? [...picked].sort((a, b) => a - b).map((n) => ({ n, chunk: evidence[n - 1].chunk }))
+    : evidence.slice(0, 3).map((s, i) => ({ n: i + 1, chunk: s.chunk }));
+
+  return items
+    .map(({ n, chunk: c }) => `[${n}] ${c.title}${c.heading ? ` › ${c.heading}` : ''}\nURL: ${citationUrl(c)}\n${c.text}`)
+    .join('\n\n---\n\n');
 }

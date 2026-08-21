@@ -9,9 +9,15 @@ import type { SpeechToTextProvider } from '@/types';
 function req(fd: FormData): NextRequest {
   return new NextRequest('http://localhost/api/voice/transcribe', { method: 'POST', body: fd });
 }
-function audioForm(bytes = new Uint8Array([1, 2, 3, 4]), type = 'audio/webm'): FormData {
+/** A minimal but REAL webm/EBML header — the route now sniffs the container. */
+function webmBytes(size = 16): Uint8Array {
+  const b = new Uint8Array(size);
+  b.set([0x1a, 0x45, 0xdf, 0xa3], 0);
+  return b;
+}
+function audioForm(bytes: Uint8Array = webmBytes(), type = 'audio/webm'): FormData {
   const fd = new FormData();
-  fd.append('audio', new File([bytes], 'speech.webm', { type }));
+  fd.append('audio', new File([bytes as BlobPart], 'speech.webm', { type }));
   return fd;
 }
 
@@ -86,10 +92,60 @@ describe('POST /api/voice/transcribe', () => {
     resetConfigForTests();
     let transcribed = false;
     setSttProviderForTests({ transcribe: async () => { transcribed = true; return { text: 'x' }; } });
-    const res = await POST(req(audioForm(new Uint8Array(5000)))); // 5 KB > 1 KB cap
+    const res = await POST(req(audioForm(webmBytes(5000)))); // 5 KB > 1 KB cap
     expect(res.status).toBe(413);
     expect(transcribed).toBe(false); // never reached the provider
     delete process.env.VOICE_MAX_BYTES;
+  });
+
+  // --- EP-SEC-04 / -08 / -10: the route is the most expensive one in the app ---
+
+  it('rejects a cross-site upload with 403 before touching the provider (EP-SEC-04)', async () => {
+    process.env.SONIOX_API_KEY = 'k';
+    resetConfigForTests();
+    let transcribed = false;
+    setSttProviderForTests({ transcribe: async () => { transcribed = true; return { text: 'x' }; } });
+    const fd = audioForm();
+    const res = await POST(
+      new NextRequest('http://localhost/api/voice/transcribe', {
+        method: 'POST',
+        headers: { origin: 'https://evil.example' },
+        body: fd,
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(transcribed).toBe(false);
+  });
+
+  it('rejects a non-audio payload with 415, even when it claims an audio MIME type (EP-SEC-10)', async () => {
+    process.env.SONIOX_API_KEY = 'k';
+    resetConfigForTests();
+    let transcribed = false;
+    setSttProviderForTests({ transcribe: async () => { transcribed = true; return { text: 'x' }; } });
+
+    const notAudio = new Uint8Array(64).fill(0x41); // 'AAAA…'
+    expect((await POST(req(audioForm(notAudio, 'audio/webm')))).status).toBe(415);
+    expect((await POST(req(audioForm(webmBytes(), 'application/zip')))).status).toBe(415);
+    expect(transcribed).toBe(false);
+  });
+
+  it('accepts the codec parameter Chrome sends (audio/webm;codecs=opus)', async () => {
+    process.env.SONIOX_API_KEY = 'k';
+    resetConfigForTests();
+    setSttProviderForTests({ transcribe: async () => ({ text: 'ok' }) });
+    expect((await POST(req(audioForm(webmBytes(), 'audio/webm;codecs=opus')))).status).toBe(200);
+  });
+
+  it('costs more than one rate-limit token per transcription (EP-SEC-08)', async () => {
+    process.env.SONIOX_API_KEY = 'k';
+    process.env.RATE_LIMIT_RPM = '8';
+    resetConfigForTests();
+    resetRateLimit();
+    setSttProviderForTests({ transcribe: async () => ({ text: 'x' }) });
+    // 8 rpm / cost 4 = 2 transcriptions, not 8
+    expect((await POST(req(audioForm()))).status).toBe(200);
+    expect((await POST(req(audioForm()))).status).toBe(200);
+    expect((await POST(req(audioForm()))).status).toBe(429);
   });
 
   it('rejects a non-multipart body with 400', async () => {

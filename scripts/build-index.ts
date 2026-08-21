@@ -1,7 +1,9 @@
 // Build the local search index from the docs clone.
 // - lexical index: always
-// - embeddings: only when AI_EMBEDDINGS_MODEL + AI_BASE_URL/KEY are configured,
-//   incremental by chunk hash (only new/changed chunks are embedded)
+// - embeddings: when AI_EMBEDDINGS_MODEL is set. `local:<model>` embeds
+//   in-process with Transformers.js and needs NO API key; any other value uses
+//   the configured OpenAI-compatible provider. Incremental by chunk hash
+//   (only new/changed chunks are embedded).
 import './env';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -9,8 +11,8 @@ import { execFileSync } from 'node:child_process';
 import MiniSearch from 'minisearch';
 import { ingestDocs } from '../src/lib/docs/ingest';
 import { miniOptions, LEXICAL_VERSION } from '../src/lib/retrieval/index';
+import { embedPassagesInBatches, localModelId, passageText } from '../src/lib/retrieval/embed';
 import { config } from '../src/lib/config';
-import { OpenAICompatibleProvider } from '../src/lib/ai/provider';
 
 async function main() {
   const cfg = config();
@@ -25,7 +27,12 @@ async function main() {
     `[build-index] ${stats.files} files -> ${stats.chunks} chunks; anchors on ${stats.anchored} (${(anchorCoverage * 100).toFixed(1)}%); skipped ${stats.skipped.length}`,
   );
 
-  // lexical
+  // lexical. NOTE: 491 chunks share a byte-identical body with another page
+  // (boilerplate sections copied across products) and EP-RET-07 proposed
+  // indexing one representative. Measured: it costs hit@5 0.813→0.792, MRR
+  // 0.592→0.568 and one extra false refusal, because the surviving
+  // representative belongs to the wrong page for half the queries. The
+  // evidence-time dedup in retrieval/index.ts is the right layer for this.
   const mini = new MiniSearch(miniOptions());
   mini.addAll(chunks as unknown as Record<string, unknown>[]);
   fs.writeFileSync(path.join(indexDir, 'lexical.json'), JSON.stringify(mini));
@@ -34,33 +41,36 @@ async function main() {
   // embeddings (optional, incremental)
   let embeddedCount = 0;
   const embPath = path.join(indexDir, 'embeddings.json');
-  if (cfg.AI_EMBEDDINGS_MODEL && cfg.aiConfigured) {
-    const model = cfg.AI_EMBEDDINGS_MODEL;
+  const embedModel = cfg.AI_EMBEDDINGS_MODEL;
+  if (embedModel && (localModelId(embedModel) || cfg.aiConfigured)) {
     const prev: { model?: string; dims?: number; vectors?: Record<string, number[]> } = fs.existsSync(embPath)
       ? JSON.parse(fs.readFileSync(embPath, 'utf8'))
       : {};
-    const vectors: Record<string, number[]> = prev.model === model ? (prev.vectors ?? {}) : {};
+    const vectors: Record<string, number[]> = prev.model === embedModel ? (prev.vectors ?? {}) : {};
     const todo = chunks.filter((c) => !vectors[c.hash]);
-    console.log(`[build-index] embedding ${todo.length}/${chunks.length} chunks with ${model} (rest cached)`);
-    const provider = new OpenAICompatibleProvider();
-    const BATCH = 64;
-    for (let i = 0; i < todo.length; i += BATCH) {
-      const batch = todo.slice(i, i + BATCH);
-      const embs = await provider.embed(
-        batch.map((c) => `${c.title}\n${c.headingPath.join(' › ')}\n${c.text}`.slice(0, 6000)),
-        model,
-      );
-      batch.forEach((c, j) => {
-        vectors[c.hash] = normalize(embs[j]);
-      });
-      embeddedCount += batch.length;
-      if (i % (BATCH * 4) === 0) console.log(`[build-index] embedded ${Math.min(i + BATCH, todo.length)}/${todo.length}`);
-    }
+    console.log(`[build-index] embedding ${todo.length}/${chunks.length} chunks with ${embedModel} (rest cached)`);
+    // local WASM inference is single-threaded; a smaller batch keeps memory flat
+    // and makes progress visible. Provider batches stay at 64 (one HTTP call).
+    const BATCH = localModelId(embedModel) ? 16 : 64;
+    let lastLogged = 0;
+    // passageText() + the 'passage:' prefix live in retrieval/embed.ts, shared
+    // with the query side, so the two halves cannot drift apart (EP-RET-01)
+    const embs = await embedPassagesInBatches(todo.map(passageText), embedModel, BATCH, (done, total) => {
+      if (done - lastLogged >= 256 || done === total) {
+        lastLogged = done;
+        console.log(`[build-index] embedded ${done}/${total}`);
+      }
+    });
+    todo.forEach((c, j) => {
+      vectors[c.hash] = normalize(embs[j]);
+    });
     // prune stale hashes
     const live = new Set(chunks.map((c) => c.hash));
     for (const h of Object.keys(vectors)) if (!live.has(h)) delete vectors[h];
+    embeddedCount = Object.keys(vectors).length; // vectors SHIPPED, not just newly computed
     const dims = Object.values(vectors)[0]?.length ?? 0;
-    fs.writeFileSync(embPath, JSON.stringify({ model, dims, vectors }));
+    fs.writeFileSync(embPath, JSON.stringify({ model: embedModel, dims, vectors }));
+    console.log(`[build-index] embeddings: ${Object.keys(vectors).length} vectors, ${dims} dims -> ${embPath}`);
   } else {
     console.log('[build-index] embeddings skipped (AI_EMBEDDINGS_MODEL not configured) — lexical-only index');
   }
@@ -91,11 +101,15 @@ async function main() {
   console.log('[build-index] done');
 }
 
+// L2-normalize (so dot product == cosine at query time) and round to 5 decimal
+// places. Full float64 text is ~20 bytes per component; 5 dp is ~8 and costs
+// ~1e-5 of cosine precision, which is three orders of magnitude below the gaps
+// that decide a ranking. On this corpus that is 30MB → ~13MB of shipped index.
 function normalize(v: number[]): number[] {
   let n = 0;
   for (const x of v) n += x * x;
   n = Math.sqrt(n) || 1;
-  return v.map((x) => x / n);
+  return v.map((x) => Math.round((x / n) * 1e5) / 1e5);
 }
 
 main().catch((e) => {

@@ -161,8 +161,18 @@ describe('citationUrl', () => {
     expect(citationUrl(corpus[0])).toBe('https://docs.liara.ir/paas/nextjs/getting-started/#deploy');
   });
 
-  it('leaves url untouched when no anchor', () => {
-    expect(citationUrl(corpus[2])).toBe(corpus[2].url);
+  // UPDATED (EP-RET-09): a chunk with no authored anchor no longer degrades to
+  // a bare page link — it deep-links to its opening sentence with a
+  // `#:~:text=` fragment. Chunks with no usable prose still return the plain
+  // url (asserted below).
+  it('falls back to a text-fragment deep link when there is no anchor', () => {
+    const url = citationUrl(corpus[2]);
+    expect(url.startsWith(`${corpus[2].url}#:~:text=`)).toBe(true);
+    expect(decodeURIComponent(url.split('#:~:text=')[1])).toContain('استقرار برنامه Django');
+  });
+
+  it('leaves url untouched when the chunk has no usable prose', () => {
+    expect(citationUrl({ ...corpus[2], text: '```bash\nliara deploy\n```' })).toBe(corpus[2].url);
   });
 });
 

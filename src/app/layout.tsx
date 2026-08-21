@@ -21,6 +21,11 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
+  // Android Chrome defaults to `resizes-visual`, which leaves the layout viewport
+  // (and so `100dvh`) at full height when the on-screen keyboard opens — the chat
+  // composer ends up underneath it. `resizes-content` shrinks the layout viewport
+  // so the bottom-anchored composer stays visible while typing (UX-01).
+  interactiveWidget: 'resizes-content',
 };
 
 // Set the saved theme before first paint to avoid a light/dark flash.

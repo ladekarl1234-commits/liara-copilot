@@ -1,11 +1,19 @@
 // Per-message pipeline: plan → retrieve → evidence gate → stream answer →
 // verify. At most 2 model calls per message (+1 optional verification);
 // 0 for greetings, cached FAQs, and the keyless degraded mode.
+//
+// EP-ARCH-01: this used to be one 235-line function with the metrics state
+// spread across 11 mutable `let`s captured by two closures, and the
+// emit->finish->record trio hand-repeated at every one of its ~10 exit
+// paths. Metrics now live in one mutable `m` object, and `respond()` is the
+// single call site that ends a turn (finish + optional next-action + record)
+// — every branch below calls it exactly once. Purely structural: no branch's
+// observable behavior changed (see tests/orchestrator*.test.ts).
 
-import crypto from 'node:crypto';
-import type { ChatEvent, Citation, ModelProvider, RetrievalResult, ScoredChunk, SessionState, Usage } from '@/types';
+import type { ChatEvent, Citation, Intent, ModelProvider, RetrievalResult, ScoredChunk, SessionState, TurnOutcome, Usage } from '@/types';
 import { config } from '@/lib/config';
 import { search, loadIndex, citationUrl, IndexMissingError } from '@/lib/retrieval/index';
+import { queryEmbedder } from '@/lib/retrieval/embed';
 import { normalizedKey, detectLanguage } from '@/lib/text/persian';
 import { getProvider, ModelError, ClientAbortError } from '@/lib/ai/provider';
 import { pickAnswerRoute, estimateCostUsd, addUsage, estimateTokens } from '@/lib/ai/router';
@@ -18,6 +26,7 @@ import { recordTrace } from '@/lib/obs/trace';
 import { recordGap } from '@/lib/obs/gaps';
 import { detectInjection } from '@/lib/security/injection';
 import { redactSecrets } from '@/lib/security/redact';
+import { hashId } from '@/lib/security/hash';
 
 // ponytail: in-memory FAQ answer cache (stateless first-turn Q&A only);
 // single-instance ceiling, same upgrade path as the session store.
@@ -44,22 +53,110 @@ export interface ChatTurnInput {
   signal?: AbortSignal;
 }
 
+/** Everything a turn accumulates for logMetrics/recordTrace, in one place
+ * instead of a fistful of captured `let`s (EP-ARCH-01). */
+interface TurnMetrics {
+  usage: Usage;
+  retrieval?: RetrievalResult;
+  modelRoute: string;
+  actualModel?: string; // model that actually served (openrouter/free is dynamic)
+  cacheHit: boolean;
+  errorCategory?: string;
+  intent?: Intent;
+  modelLatencyMs?: number;
+  // 'model' | 'fallback' | 'none' — silent planner degradation was otherwise
+  // invisible (EP-OBS-02); 'none' = no model call attempted at all (keyless / greeting).
+  planRoute: 'model' | 'fallback' | 'none';
+  verified?: boolean; // whether claim verification actually ran (EP-OBS-03)
+  unsupportedClaims?: number;
+}
+
 export async function handleChatMessage({ message, sessionId, requestId, emit, signal }: ChatTurnInput): Promise<void> {
   const t0 = Date.now();
   const cfg = config();
   const session = getOrCreateSession(sessionId);
   emit({ type: 'session', sessionId: session.id });
 
-  let usage: Usage = { inputTokens: 0, outputTokens: 0 };
-  let retrieval: RetrievalResult | undefined;
-  let modelRoute = 'none';
-  let actualModel: string | undefined; // model that actually served (openrouter/free is dynamic)
-  let cacheHit = false;
-  let errorCategory: string | undefined;
-  let intent: import('@/types').Intent | undefined;
-  let modelLatencyMs: number | undefined;
+  const m: TurnMetrics = {
+    usage: { inputTokens: 0, outputTokens: 0 },
+    modelRoute: 'none',
+    cacheHit: false,
+    planRoute: 'none',
+  };
+
+  // Did we already stream any answer text to the client? A mid-stream provider
+  // failure must NOT append 'answer unavailable' to a half-written answer
+  // (EP-REL-01 follow-up: the fallback was only correct for a failure BEFORE
+  // the first token).
+  let emittedDelta = false;
+  let streamedAnswer = ''; // partial text already sent; readable from the catch
 
   const provider: ModelProvider | null = cfg.aiConfigured ? getProvider() : null;
+
+  /** The one call site every exit path ends at: emit `done` (or nothing, for
+   * the no-message error/abort paths), advance the anti-repetition tracker,
+   * and log the metrics + trace row. Collapses what used to be an
+   * emit/finish/record trio hand-repeated at every branch (EP-ARCH-01). */
+  function respond(outcome: TurnOutcome, answerText: string, nextAction?: string): void {
+    finish(emit, session.id, requestId, message, answerText);
+    if (nextAction) setLastAction(session.id, nextAction);
+    record(outcome);
+  }
+
+  function record(outcome: TurnOutcome): void {
+    const totalLatencyMs = Date.now() - t0;
+    logMetrics({
+      requestId,
+      // messageId === requestId (EP-OBS-01) — the join key between the SSE
+      // `done` event, this metrics row, the pipeline trace, and a later
+      // /api/feedback row.
+      messageId: requestId,
+      // hashed: the raw id is a session credential (getOrCreateSession resolves
+      // it), so it must never land in logs where it could be replayed
+      sessionId: hashId(session.id),
+      intent: m.intent,
+      outcome,
+      product: session.context.product,
+      retrievalLatencyMs: m.retrieval?.latencyMs,
+      candidateCount: m.retrieval?.chunks.length,
+      modelLatencyMs: m.modelLatencyMs,
+      totalLatencyMs,
+      inputTokens: m.usage.inputTokens,
+      outputTokens: m.usage.outputTokens,
+      estimatedCostUsd: estimateCostUsd(m.usage),
+      cacheHit: m.cacheHit,
+      retrievalConfidence: m.retrieval?.confidence,
+      modelRoute: m.actualModel ? `${m.modelRoute} → ${m.actualModel}` : m.modelRoute,
+      planRoute: m.planRoute,
+      verified: m.verified,
+      unsupportedClaims: m.unsupportedClaims,
+      errorCategory: m.errorCategory,
+    });
+    recordTrace({
+      requestId,
+      messageId: requestId,
+      outcome,
+      planRoute: m.planRoute,
+      verified: m.verified,
+      unsupportedClaims: m.unsupportedClaims,
+      ts: new Date().toISOString(),
+      // redact any pasted secret before it lands in the dev trace buffer
+      message: redactSecrets(message).slice(0, 300),
+      retrieval: m.retrieval
+        ? {
+            queries: m.retrieval.queries,
+            confidence: m.retrieval.confidence,
+            chunks: m.retrieval.chunks.map((s) => ({ id: s.chunk.id, score: s.score, url: citationUrl(s.chunk) })),
+            latencyMs: m.retrieval.latencyMs,
+          }
+        : undefined,
+      modelRoute: m.modelRoute,
+      actualModel: m.actualModel,
+      usage: m.usage,
+      totalLatencyMs,
+      error: m.errorCategory ? `${m.errorCategory} (${outcome})` : undefined,
+    });
+  }
 
   try {
     // Prompt-injection / instruction-override front door: refuse deterministically
@@ -68,24 +165,26 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     // <user_data> fencing handles pasted content that merely CONTAINS such text.
     if (detectInjection(message)) {
       const lang = detectLanguage(message);
+      m.intent = 'unsupported';
       emit({ type: 'delta', text: CANNED.injection[lang] });
       log('warn', 'injection_blocked', { requestId });
-      finish(emit, session.id, message, CANNED.injection[lang]);
-      intent = 'unsupported';
-      record('injection_blocked');
+      respond('injection_blocked', CANNED.injection[lang]);
       return;
     }
 
-    // FAQ cache first: a hit costs ZERO model calls (stateless first turns only;
-    // entries are only ever stored for verified, high-confidence question answers)
-    const preKey = session.turns === 0 ? cacheKeyFor(message, detectLanguage(message)) : null;
+    // FAQ cache first: a hit costs ZERO model calls. Eligible whenever the
+    // SESSION carries no accumulated personalization (EP-COST-02), not only on
+    // turn 0 — a client that persists sessionId across a tab's lifetime made
+    // the read path near-dead (~5% of turns) once turns>0 was disqualifying
+    // outright. Still keyed on the normalized message + index build time, so a
+    // hit can never reflect anything session-specific.
+    const preKey = sessionIsStateless(session) ? cacheKeyFor(message, detectLanguage(message)) : null;
     if (preKey && answerCache.has(preKey)) {
       const hit = answerCache.get(preKey)!;
-      cacheHit = true;
+      m.cacheHit = true;
       emit({ type: 'delta', text: hit.text });
       emit({ type: 'citations', citations: hit.citations });
-      finish(emit, session.id, message, hit.text);
-      record('cache');
+      respond('cache', hit.text);
       return;
     }
 
@@ -99,8 +198,15 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     emit({ type: 'stage', stage: 'understanding' });
     const planned = await makePlan(modelSafe, session, provider, signal);
     const plan = planned.plan;
-    usage = addUsage(usage, planned.usage);
-    intent = plan.intent;
+    m.usage = addUsage(m.usage, planned.usage);
+    m.intent = plan.intent;
+    m.planRoute = planned.route === 'deterministic' ? 'none' : planned.route;
+    if (planned.route === 'fallback') {
+      // the planner silently degrading to regex classification is otherwise
+      // invisible in logs/metrics — this is the signal an operator needs to
+      // catch it happening at scale (EP-OBS-02)
+      log('warn', 'plan_fallback', { requestId, reason: planned.reason ?? 'unknown' });
+    }
 
     applyPatch(session, plan.statePatch, plan.language, plan.intent);
     save(session);
@@ -110,8 +216,7 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     // --- no-retrieval paths ---
     if (plan.intent === 'chitchat') {
       emit({ type: 'delta', text: CANNED.greeting[plan.language] });
-      finish(emit, session.id, message, CANNED.greeting[plan.language]);
-      record('chitchat');
+      respond('chitchat', CANNED.greeting[plan.language]);
       return;
     }
     if (plan.action === 'clarify' && plan.clarifyQuestion) {
@@ -120,25 +225,25 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
       }
       emit({ type: 'delta', text: plan.clarifyQuestion });
       emitState(emit, session);
-      finish(emit, session.id, message, plan.clarifyQuestion);
-      setLastAction(session.id, 'clarify');
-      record('clarify');
+      respond('clarify', plan.clarifyQuestion, 'clarify');
       return;
     }
 
     // --- retrieval ---
     emit({ type: 'stage', stage: 'searching' });
-    const embedQuery =
-      provider && cfg.AI_EMBEDDINGS_MODEL
-        ? (texts: string[]) => provider.embed(texts, cfg.AI_EMBEDDINGS_MODEL!)
-        : undefined;
-    retrieval = await search(
+    // queryEmbedder() reads AI_EMBEDDINGS_MODEL itself and only needs `provider`
+    // for a provider-hosted model — a `local:` model needs no API key at all, so
+    // gating this on `provider` (as before) made local embeddings unreachable
+    // even with no LLM configured (EP-RET-01).
+    const embedQuery = queryEmbedder();
+    const retrieval = await search(
       // modelSafe (redacted), never the raw message: when embeddings are on this
       // query is sent to the embeddings provider and stored in the dev trace.
       plan.retrievalQueries.length ? plan.retrievalQueries : [modelSafe.slice(0, 200)],
       plan.filters,
       { embedQuery, priorTurns: session.turns },
     );
+    m.retrieval = retrieval;
 
     emit({ type: 'stage', stage: 'checking' });
 
@@ -154,9 +259,7 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
         const msg = fixFramedMessage(t, plan.language);
         emit({ type: 'delta', text: msg });
         emitState(emit, session);
-        finish(emit, session.id, message, msg);
-        setLastAction(session.id, 'next_step');
-        record('troubleshoot_low_evidence');
+        respond('troubleshoot_low_evidence', msg, 'next_step');
         return;
       }
       const w = session.workflow;
@@ -164,9 +267,7 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
         const msg = guideFramedMessage(w, plan.language);
         emit({ type: 'delta', text: msg });
         emitState(emit, session);
-        finish(emit, session.id, message, msg);
-        setLastAction(session.id, 'next_step');
-        record('workflow_low_evidence');
+        respond('workflow_low_evidence', msg, 'next_step');
         return;
       }
       const msg = CANNED.insufficient[plan.language];
@@ -180,9 +281,7 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
         product: session.context.product,
         language: plan.language,
       });
-      finish(emit, session.id, message, msg);
-      setLastAction(session.id, 'insufficient');
-      record('insufficient');
+      respond('insufficient', msg, 'insufficient');
       return;
     }
 
@@ -194,15 +293,14 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
       // still surface the agentic state (troubleshooting hypotheses / workflow
       // steps) the plan seeded — Fix/Guide are visible even without a model
       emitState(emit, session);
-      finish(emit, session.id, message, msg);
-      record('degraded');
+      respond('degraded', msg);
       return;
     }
 
     // --- answer ---
     emit({ type: 'stage', stage: 'answering' });
     const route = pickAnswerRoute(plan.intent, retrieval.confidence);
-    modelRoute = route.label + ':' + route.model;
+    m.modelRoute = route.label + ':' + route.model;
     const tModel = Date.now();
     let answer = '';
     const answerMessages = [
@@ -215,18 +313,20 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
       maxTokens: 1400,
       temperature: 0.2,
       signal,
-      onMeta: (m) => { if (m.model) actualModel = m.model; },
+      onMeta: (meta) => { if (meta.model) m.actualModel = meta.model; },
     });
     for await (const delta of stream) {
       answer += delta;
+      streamedAnswer = answer;
+      emittedDelta = true;
       emit({ type: 'delta', text: delta });
     }
-    modelLatencyMs = Date.now() - tModel;
+    m.modelLatencyMs = Date.now() - tModel;
     // The streaming API returns no usage object, so estimate BOTH sides from the
     // real prompt + completion (was inputTokens:0 — the answer call sends the
     // biggest prompt of the request). Persian-aware estimate (OBS2-001).
-    const answerInputTokens = answerMessages.reduce((n, m) => n + estimateTokens(m.content), 0);
-    usage = addUsage(usage, { inputTokens: answerInputTokens, outputTokens: estimateTokens(answer) });
+    const answerInputTokens = answerMessages.reduce((n, msg) => n + estimateTokens(msg.content), 0);
+    m.usage = addUsage(m.usage, { inputTokens: answerInputTokens, outputTokens: estimateTokens(answer) });
 
     const citations = citationsFromAnswer(answer, retrieval.chunks);
     emit({ type: 'citations', citations });
@@ -234,7 +334,9 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
 
     // --- verification (optional) ---
     const v = await verifyAnswer(answer, retrieval.chunks, provider, signal);
-    usage = addUsage(usage, v.usage);
+    m.usage = addUsage(m.usage, v.usage);
+    m.verified = v.checked;
+    m.unsupportedClaims = v.unsupportedCount;
     if (v.checked) {
       // unsupported claims must reach the USER, not only the server log
       const note =
@@ -245,20 +347,27 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
               : 'Some claims in this answer could not be verified against the official docs; use with care.'))
           : undefined;
       emit({ type: 'verification', note });
+    } else {
+      // "never checked" must be distinguishable from "checked, clean" — a
+      // silently-off verifier otherwise reads as improved grounding (EP-OBS-03)
+      log('warn', 'verify_skipped', { requestId, reason: verifySkipReason(cfg, answer) });
     }
     if (v.unsupportedCount > 0) {
       log('warn', 'ungrounded_claims', { requestId, count: v.unsupportedCount });
     }
 
-    // cache stateless simple answers (same deterministic key the pre-plan lookup uses)
-    if (plan.intent === 'question' && session.turns === 0 && retrieval.confidence === 'high' && preKey && v.unsupportedCount === 0) {
+    // cache stateless simple answers (same deterministic key the pre-plan
+    // lookup uses). Write bar widened from confidence==='high' (~5% of
+    // sourced turns) to !=='low' (EP-COST-02); unsupportedCount===0 stays the
+    // real quality guard — verification, not the retrieval gate, is what
+    // proves the answer was grounded. Still gated on turns===0 so a write can
+    // never bake in personalization from a mid-conversation statePatch.
+    if (plan.intent === 'question' && session.turns === 0 && retrieval.confidence !== 'low' && preKey && v.unsupportedCount === 0) {
       answerCache.set(preKey, { text: answer, citations });
       while (answerCache.size > ANSWER_CACHE_MAX) answerCache.delete(answerCache.keys().next().value as string);
     }
 
-    finish(emit, session.id, message, answer);
-    setLastAction(session.id, plan.action);
-    record('answered');
+    respond('answered', answer, plan.action);
   } catch (e) {
     if (e instanceof ClientAbortError || signal?.aborted) {
       // the client is gone: no error event, no error metric — but the turn
@@ -268,70 +377,65 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
       record('client_abort');
       return;
     }
-    errorCategory = e instanceof ModelError ? e.code : e instanceof IndexMissingError ? 'index_missing' : 'internal';
-    log('error', 'chat_failed', { requestId, category: errorCategory, message: (e as Error).message });
+    m.errorCategory = e instanceof ModelError ? e.code : e instanceof IndexMissingError ? 'index_missing' : 'internal';
+    log('error', 'chat_failed', { requestId, category: m.errorCategory, message: (e as Error).message });
+
+    // The answer model failed but retrieval already passed the evidence gate:
+    // serve the same degraded sources-only payload the keyless branch uses
+    // instead of a dead end — a user with good evidence in hand should never
+    // see a bare error (EP-REL-01). Guaranteed non-empty chunks here: any
+    // retrieval with confidence 'low' or no chunks already returned at the
+    // evidence gate above, before reaching this point.
+    if (m.retrieval && m.retrieval.confidence !== 'low') {
+      // Two different failures, two different repairs:
+      //  - nothing streamed yet -> replace the answer with the sources-only payload;
+      //  - already streaming    -> KEEP the partial answer (it is grounded text the
+      //    user is reading) and append a short truncation notice. Concatenating the
+      //    canned 'unavailable' message onto half an answer produced garbage.
+      const msg = emittedDelta
+        ? CANNED.answerTruncated[session.language]
+        : CANNED.answerUnavailable[session.language];
+      emit({ type: 'delta', text: (emittedDelta ? '\n\n' : '') + msg });
+      emit({ type: 'citations', citations: toCitations(m.retrieval.chunks.slice(0, 5)) });
+      emitState(emit, session);
+      respond('sources_fallback', streamedAnswer + msg);
+      return;
+    }
+
     emit({
       type: 'error',
-      code: errorCategory as never,
-      message: errorMessage(errorCategory, session.language),
+      code: m.errorCategory as never,
+      message: errorMessage(m.errorCategory, session.language),
     });
     // failed turns are still turns: keeps the FAQ-cache/turn-0 logic honest
     // and lets the next plan call see that this question was already asked
-    pushTurn(session, message, `<error:${errorCategory}>`);
+    pushTurn(session, message, `<error:${m.errorCategory}>`);
     record('error');
   }
-
-  function record(outcome: string) {
-    const totalLatencyMs = Date.now() - t0;
-    logMetrics({
-      requestId,
-      // hashed: the raw id is a session credential (getOrCreateSession resolves
-      // it), so it must never land in logs where it could be replayed
-      sessionId: crypto.createHash('sha256').update(session.id).digest('hex').slice(0, 12),
-      intent,
-      product: session.context.product,
-      retrievalLatencyMs: retrieval?.latencyMs,
-      candidateCount: retrieval?.chunks.length,
-      modelLatencyMs,
-      totalLatencyMs,
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      estimatedCostUsd: estimateCostUsd(usage),
-      cacheHit,
-      retrievalConfidence: retrieval?.confidence,
-      modelRoute: actualModel ? `${modelRoute} → ${actualModel}` : modelRoute,
-      errorCategory,
-    });
-    recordTrace({
-      requestId,
-      ts: new Date().toISOString(),
-      // redact any pasted secret before it lands in the dev trace buffer
-      message: redactSecrets(message).slice(0, 300),
-      retrieval: retrieval
-        ? {
-            queries: retrieval.queries,
-            confidence: retrieval.confidence,
-            chunks: retrieval.chunks.map((s) => ({ id: s.chunk.id, score: s.score, url: citationUrl(s.chunk) })),
-            latencyMs: retrieval.latencyMs,
-          }
-        : undefined,
-      modelRoute,
-      actualModel,
-      usage,
-      totalLatencyMs,
-      error: errorCategory ? `${errorCategory} (${outcome})` : undefined,
-    });
-  }
 }
+
+// Both framed messages below fire exactly when the evidence gate has already
+// said retrieval is unreliable — no citations, no verifyAnswer call backs
+// them. The hypotheses/steps they render can be model-authored (the planning
+// model's own statePatch), so an explicit "these are untriaged guesses, not
+// documented facts" line is required or a wrong guess is indistinguishable
+// from a sourced answer to the user (EP-ANS-03).
+// Wording deliberately avoids "couldn't find" / "پیدا نکردم" — that phrase is
+// reserved for the hard refusal (CANNED.insufficient) elsewhere in this file;
+// this path still gives actionable content, it just isn't sourced.
+const UNTRIAGED_NOTE = {
+  fa: '⚠️ این مورد در مستندات رسمی به‌طور مستقیم پوشش داده نشده؛ آنچه زیر می‌آید حدس‌های نظام‌مند بر اساس نوع مشکل است، نه گزاره‌ای مستند.',
+  en: "⚠️ This isn't directly covered in the official docs; what follows is informed guessing based on the symptom, not documented fact.",
+} as const;
 
 /** A ranked-hypotheses Fix message when retrieval is weak but we can still reason from the symptom. */
 function fixFramedMessage(t: NonNullable<SessionState['troubleshooting']>, lang: 'fa' | 'en'): string {
   const top = t.hypotheses[0]?.text ?? '';
   const others = t.hypotheses.slice(1).map((h: { text: string }) => `• ${h.text}`).join('\n');
   if (lang === 'fa') {
-    return `برای این خطا محتمل‌ترین علت‌ها این‌ها هستند. بیایید از محتمل‌ترین شروع کنیم:\n\n**اولین چیزی که بررسی کنیم:** ${top}\n\n${others ? `سایر احتمال‌ها:\n${others}\n\n` : ''}نتیجه‌ی بررسی بالا را بگویید تا قدم بعدی را مشخص کنم.`;
+    return `${UNTRIAGED_NOTE.fa}\n\nبرای این خطا محتمل‌ترین علت‌ها این‌ها هستند. بیایید از محتمل‌ترین شروع کنیم:\n\n**اولین چیزی که بررسی کنیم:** ${top}\n\n${others ? `سایر احتمال‌ها:\n${others}\n\n` : ''}نتیجه‌ی بررسی بالا را بگویید تا قدم بعدی را مشخص کنم.`;
   }
-  return `Here are the most likely causes for this error. Let's start with the most likely:\n\n**First thing to check:** ${top}\n\n${others ? `Other possibilities:\n${others}\n\n` : ''}Tell me what you find and I'll narrow down the next step.`;
+  return `${UNTRIAGED_NOTE.en}\n\nHere are the most likely causes for this error. Let's start with the most likely:\n\n**First thing to check:** ${top}\n\n${others ? `Other possibilities:\n${others}\n\n` : ''}Tell me what you find and I'll narrow down the next step.`;
 }
 
 /** A step-framed Guide message for a detected multi-step workflow. */
@@ -339,9 +443,9 @@ function guideFramedMessage(w: NonNullable<SessionState['workflow']>, lang: 'fa'
   const current = w.steps.find((s: { status: string }) => s.status === 'current') ?? w.steps[0];
   const detected = w.detected.length ? w.detected.join('، ') : '';
   if (lang === 'fa') {
-    return `${detected ? `استک شناسایی‌شده: ${detected}.\n\n` : ''}این کار را قدم‌به‌قدم پیش می‌بریم.\n\n**قدم فعلی:** ${current?.label ?? ''}\n\nوقتی این قدم را انجام دادید بگویید تا برویم سراغ قدم بعدی. فهرست کامل مراحل کنار همین پیام آمده است.`;
+    return `${UNTRIAGED_NOTE.fa}\n\n${detected ? `استک شناسایی‌شده: ${detected}.\n\n` : ''}این کار را قدم‌به‌قدم پیش می‌بریم.\n\n**قدم فعلی:** ${current?.label ?? ''}\n\nوقتی این قدم را انجام دادید بگویید تا برویم سراغ قدم بعدی. فهرست کامل مراحل کنار همین پیام آمده است.`;
   }
-  return `${detected ? `Detected stack: ${detected}.\n\n` : ''}Let's do this step by step.\n\n**Current step:** ${current?.label ?? ''}\n\nTell me when it's done and we'll move to the next. The full checklist is shown alongside this message.`;
+  return `${UNTRIAGED_NOTE.en}\n\n${detected ? `Detected stack: ${detected}.\n\n` : ''}Let's do this step by step.\n\n**Current step:** ${current?.label ?? ''}\n\nTell me when it's done and we'll move to the next. The full checklist is shown alongside this message.`;
 }
 
 function emitState(emit: (e: ChatEvent) => void, session: ReturnType<typeof getOrCreateSession>) {
@@ -349,10 +453,13 @@ function emitState(emit: (e: ChatEvent) => void, session: ReturnType<typeof getO
   if (session.troubleshooting) emit({ type: 'troubleshooting', state: session.troubleshooting });
 }
 
-function finish(emit: (e: ChatEvent) => void, sessionId: string, userMsg: string, answer: string) {
+function finish(emit: (e: ChatEvent) => void, sessionId: string, requestId: string, userMsg: string, answer: string) {
   const s = getOrCreateSession(sessionId);
   pushTurn(s, userMsg, answer.slice(0, 300));
-  emit({ type: 'done', messageId: crypto.randomUUID() });
+  // messageId === requestId (EP-OBS-01): a minted-and-discarded UUID here had
+  // no way back to the request_metrics/trace row that produced it, so a
+  // thumbs-down could never be joined to the pipeline run it was about.
+  emit({ type: 'done', messageId: requestId });
 }
 
 function toCitations(chunks: ScoredChunk[]): Citation[] {
@@ -389,6 +496,48 @@ export function citationsFromAnswer(answer: string, evidence: ScoredChunk[]): Ci
   return out.length ? out : toCitations(evidence.slice(0, 3));
 }
 
+
+/**
+ * True when the session carries no accumulated personalization/state — no
+ * platform/db/product/error context, no active Fix/Guide flow, no profile
+ * signal. The FAQ cache may only be READ under this condition (EP-COST-02):
+ * reading it for a session that has accumulated context would serve a
+ * generic cached answer that ignores context the model would otherwise have
+ * honored. turns===0 always satisfies this (nothing has been patched into
+ * the session yet), but so can a later turn whose prior exchanges were all
+ * plain, context-free questions.
+ */
+function sessionIsStateless(s: SessionState): boolean {
+  const c = s.context;
+  return (
+    !c.product &&
+    !c.platform &&
+    !c.database &&
+    !c.knownError &&
+    !c.language &&
+    c.triedActions.length === 0 &&
+    !s.troubleshooting &&
+    !s.workflow &&
+    !s.profile.experience &&
+    !s.profile.platform &&
+    !s.profile.packageManager &&
+    !s.profile.usesDocker
+  );
+}
+
+/**
+ * Best-effort reason a verification pass didn't run. verify.ts only exposes
+ * `checked: boolean` (its internal skip conditions are not observable from
+ * here), so this infers a reason from the same gates it applies, in the same
+ * order — "never checked" must be distinguishable from "checked, clean"
+ * (EP-OBS-03). `provider`/`evidence.length` are not checked here because this
+ * is only called from the branch where both are already guaranteed truthy.
+ */
+function verifySkipReason(cfg: ReturnType<typeof config>, answer: string): string {
+  if (cfg.VERIFY_CLAIMS !== 'on') return 'disabled';
+  if (answer.length < 200) return 'too_short';
+  return 'provider_error_or_unparsed';
+}
 
 function cacheKeyFor(message: string, lang: string): string | null {
   const key = normalizedKey(message);

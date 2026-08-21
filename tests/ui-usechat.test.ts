@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyEvent, faError, parseSSE, STAGE_FA, type UIMessage } from '@/components/useChat';
-import type { ErrorCode } from '@/types';
+import type { ChatEvent, ErrorCode } from '@/types';
 
 const base: UIMessage = { id: 'local-1', role: 'assistant', text: '' };
 
@@ -34,6 +34,11 @@ describe('parseSSE', () => {
 
 describe('applyEvent', () => {
   it('accumulates deltas, attaches citations, adopts server id on done', () => {
+    // NOTE: this used to assert `m.id === 'srv-1'`. Overwriting the id at `done`
+    // changed the React key mid-message, unmounting and remounting the whole turn
+    // inside the live region so screen readers re-read the finished answer from
+    // scratch (A11Y-01). The server id now lands in `serverId`, which is what
+    // /api/feedback needs, while `id` stays stable for the lifetime of the turn.
     let m = applyEvent(base, { type: 'delta', text: 'یک' });
     m = applyEvent(m, { type: 'delta', text: ' دو' });
     m = applyEvent(m, {
@@ -45,8 +50,22 @@ describe('applyEvent', () => {
     expect(m.text).toBe('یک دو');
     expect(m.citations).toHaveLength(1);
     expect(m.verificationNote).toBe('یک ادعا اصلاح شد.');
-    expect(m.id).toBe('srv-1');
+    expect(m.serverId).toBe('srv-1');
     expect(m.done).toBe(true);
+  });
+
+  it('never changes the React key: the client id survives every event', () => {
+    const events: ChatEvent[] = [
+      { type: 'delta', text: 'سلام' },
+      { type: 'citations', citations: [{ title: 't', url: 'https://x/#y', product: 'paas' }] },
+      { type: 'verification', note: 'اصلاح' },
+      { type: 'done', messageId: 'srv-9' },
+    ];
+    let m = base;
+    for (const ev of events) {
+      m = applyEvent(m, ev);
+      expect(m.id, `id must survive a ${ev.type} event`).toBe(base.id);
+    }
   });
 
   it('verification without a note changes nothing', () => {

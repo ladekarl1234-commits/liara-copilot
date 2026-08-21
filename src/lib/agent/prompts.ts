@@ -167,4 +167,19 @@ export const CANNED = {
     fa: 'سرویس مدل زبانی هنوز پیکربندی نشده (OPENROUTER_API_KEY). با این حال نزدیک‌ترین صفحات مستندات رسمی را برایتان پیدا کردم — منابع زیر را ببینید.',
     en: 'The language-model provider is not configured yet (OPENROUTER_API_KEY). I still found the closest official docs pages — see the sources below.',
   },
+  // used when the provider IS configured but the answer call itself failed
+  // (rate limit / upstream error) — must not repeat the "not configured" text,
+  // which would be actively wrong here (EP-REL-01).
+  answerUnavailable: {
+    fa: 'در حال حاضر امکان تولید پاسخ توسط مدل زبانی نبود. نزدیک‌ترین صفحات مستندات رسمی را برایتان پیدا کردم — منابع زیر را ببینید.',
+    en: "The language model couldn't generate an answer right now. I still found the closest official docs pages — see the sources below.",
+  },
+  // Used when the stream DIED PART-WAY: the text above is real, grounded output
+  // the user is already reading, so it is kept and this notice is appended.
+  // Appending `answerUnavailable` instead produced "…half an answer… the model
+  // couldn't generate an answer", which is both false and confusing.
+  answerTruncated: {
+    fa: '⚠️ پاسخ ناتمام ماند (ارتباط با مدل زبانی قطع شد). آنچه در بالا آمده معتبر است؛ برای ادامه دوباره بپرسید یا منابع زیر را ببینید.',
+    en: '⚠️ This answer was cut short (the connection to the language model dropped). What you see above is valid — ask again to continue, or see the sources below.',
+  },
 } as const;

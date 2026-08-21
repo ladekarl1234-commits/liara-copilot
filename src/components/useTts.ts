@@ -18,15 +18,31 @@ function stripMarkdown(md: string): string {
     .trim();
 }
 
+/** True once the voice list is known AND it contains a voice for `want`. */
+export function pickVoice(voices: SpeechSynthesisVoice[], want: 'fa' | 'en') {
+  return voices.find((v) => v.lang?.toLowerCase().startsWith(want));
+}
+
 export function useTts() {
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [supported, setSupported] = useState(false);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  /** Carries the message id so the note renders next to the button that failed. */
+  const [error, setError] = useState<{ id: string; message: string } | null>(null);
 
   useEffect(() => {
     const ok = typeof window !== 'undefined' && 'speechSynthesis' in window;
     setSupported(ok);
+    if (!ok) return;
+    const synth = window.speechSynthesis;
+    // Chrome returns [] from getVoices() until `voiceschanged` fires, so reading it
+    // once on first click always misses. Subscribe and cache instead (UX-10).
+    const read = () => setVoices(synth.getVoices());
+    read();
+    synth.addEventListener('voiceschanged', read);
     return () => {
-      if (ok) window.speechSynthesis.cancel();
+      synth.removeEventListener('voiceschanged', read);
+      synth.cancel();
     };
   }, []);
 
@@ -45,18 +61,33 @@ export function useTts() {
         return;
       }
       synth.cancel();
+      setError(null);
+      const voice = pickVoice(voices, lang);
+      if (!voice) {
+        // No matching OS voice: speaking anyway produces silence and the button
+        // just flips back, which reads as "the app is broken". Say why instead.
+        setError({
+          id,
+          message:
+            lang === 'fa'
+              ? 'سیستم شما صدای فارسی نصب‌شده ندارد؛ خواندن پاسخ ممکن نیست.'
+              : 'صدای انگلیسی روی سیستم شما نصب نیست.',
+        });
+        return;
+      }
       const u = new SpeechSynthesisUtterance(stripMarkdown(text));
-      const want = lang === 'fa' ? 'fa' : 'en';
-      const voice = synth.getVoices().find((v) => v.lang?.toLowerCase().startsWith(want));
-      if (voice) u.voice = voice;
-      u.lang = voice?.lang ?? (lang === 'fa' ? 'fa-IR' : 'en-US');
+      u.voice = voice;
+      u.lang = voice.lang;
       u.onend = () => setSpeakingId((cur) => (cur === id ? null : cur));
-      u.onerror = () => setSpeakingId((cur) => (cur === id ? null : cur));
+      u.onerror = () => {
+        setError({ id, message: 'خواندن پاسخ با خطا متوقف شد.' });
+        setSpeakingId((cur) => (cur === id ? null : cur));
+      };
       setSpeakingId(id);
       synth.speak(u);
     },
-    [speakingId],
+    [speakingId, voices],
   );
 
-  return { supported, speakingId, toggle, stop };
+  return { supported, speakingId, toggle, stop, error };
 }

@@ -4,6 +4,7 @@
     "question": "چطور متغیر محیطی به برنامه‌ام در لیارا اضافه کنم؟",
     "category": "how-to",
     "language": "fa",
+    "tunedOn": true,
     "expectedSources": [
       "https://docs.liara.ir/paas/details/envs",
       "https://docs.liara.ir/references/cli/add-or-edit-envs"
@@ -21,6 +22,7 @@
     "question": "با CLI چطور برای برنامه‌ام دیسک بسازم؟",
     "category": "how-to",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/disks/create"],
     "expectedFacts": [
       "دستور liara disk:create",
@@ -35,6 +37,7 @@
     "question": "چطور برای برنامه‌ام health check تنظیم کنم که استقرار بدون اختلال درست کار کنه؟",
     "category": "how-to",
     "language": "fa",
+    "tunedOn": true,
     "expectedSources": ["https://docs.liara.ir/paas/details/health-check"],
     "expectedFacts": [
       "در فایل liara.json فیلد healthCheck با command تعریف می‌شود",
@@ -49,6 +52,7 @@
     "question": "بعضی پکیج‌ها موقع build از ایران دانلود نمیشن. چطور build رو ببرم روی سرور خارج؟",
     "category": "how-to",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/details/build-location"],
     "expectedFacts": [
       "در liara.json فیلد build.location را germany قرار دهید",
@@ -63,6 +67,7 @@
     "question": "چطور حجم دیسک برنامه‌ام رو زیاد کنم؟",
     "category": "how-to",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/disks/increase-value"],
     "expectedFacts": [
       "ابتدا برنامه را خاموش کنید",
@@ -77,6 +82,7 @@
     "question": "سریع‌ترین راه راه‌اندازی وردپرس روی لیارا چیه؟",
     "category": "how-to",
     "language": "fa",
+    "tunedOn": true,
     "expectedSources": ["https://docs.liara.ir/one-click-apps/wordpress/quick-start"],
     "expectedFacts": [
       "وردپرس به صورت برنامه آماده (one-click) راه‌اندازی می‌شود",
@@ -90,6 +96,7 @@
     "question": "میخوام یه ایمیج آماده از DockerHub رو مستقیم روی لیارا اجرا کنم. چیکار کنم؟",
     "category": "deployment-workflow",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/docker/how-tos/deploy-image-from-dockerhub"],
     "expectedFacts": [
       "در فایل liara.json فیلد image نام ایمیج را مشخص کنید",
@@ -104,6 +111,7 @@
     "question": "How do I deploy a Next.js app to Liara?",
     "category": "deployment-workflow",
     "language": "en",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/nextjs/quick-start"],
     "expectedFacts": [
       "deploy via Liara Console (zip upload) or Liara CLI (liara deploy)",
@@ -118,6 +126,7 @@
     "question": "تنظیمات settings.py جنگو برای اتصال به دیتابیس PostgreSQL لیارا چطوریه؟",
     "category": "platform-specific",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/django/how-tos/connect-to-db/postgresql"],
     "expectedFacts": [
       "نصب psycopg2",
@@ -133,6 +142,7 @@
     "question": "پروژه Next.js من رو دستی ساختم نه با create-next-app؛ روی پلتفرم Next لیارا اجرا میشه؟",
     "category": "platform-specific",
     "language": "fa",
+    "tunedOn": true,
     "expectedSources": ["https://docs.liara.ir/paas/nextjs/quick-start"],
     "expectedFacts": [
       "فقط برنامه‌هایی که با create-next-app ساخته شده باشند در پلتفرم Next لیارا قابل اجرا هستند"
@@ -146,6 +156,7 @@
     "question": "چطور یه باکت ذخیره‌سازی ابری توی لیارا بسازم؟",
     "category": "object-storage",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/object-storage/quick-setup"],
     "expectedFacts": [
       "از منوی ذخیره‌سازی ابری، گزینه ایجاد باکت",
@@ -160,6 +171,7 @@
     "question": "How do I get an access key and secret key for my Liara bucket?",
     "category": "object-storage",
     "language": "en",
+    "tunedOn": true,
     "expectedSources": ["https://docs.liara.ir/object-storage/how-tos/create-key"],
     "expectedFacts": [
       "create a key from the keys section",

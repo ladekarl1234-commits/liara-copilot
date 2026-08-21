@@ -1,0 +1,1942 @@
+{
+  "date": "2026-08-21T01:40:45.365Z",
+  "commit": "9514d96a9698960c785cf9cbfd296f933356f58c",
+  "dirtyWorktree": true,
+  "node": "v24.16.0",
+  "embeddingModel": "Xenova/multilingual-e5-small",
+  "dims": 384,
+  "index": {
+    "docsCommit": "31f2ef7adce565341d7eba43492ef5b4f63a7d73",
+    "chunkCount": 3746,
+    "builtAt": "2026-08-21T00:45:23.430Z"
+  },
+  "sourcedCases": 48,
+  "note": "Local embeddings (Transformers.js, offline). Modes drive the shipped search() via mode flags; latency includes local query-embedding time for vector/hybrid.",
+  "metricNotes": {
+    "hit1": "gold page at rank 1 of the raw fused ranking (was published as recall1 — a mislabel)",
+    "hit5": "ANY gold page in the top 5 pages",
+    "recall5": "genuine recall: |gold pages in top 5| / |gold pages|, averaged over cases. Lower than hit@5 wherever a case has more than one gold page (13 of 48 do).",
+    "mcnemar": "exact two-sided paired test on the discordant cases. p >= 0.05 means the two modes are NOT distinguishable on this eval set, whatever the aggregate delta looks like."
+  },
+  "modes": [
+    {
+      "mode": "lexical",
+      "n": 48,
+      "hit1": 0.4375,
+      "hit3": 0.75,
+      "hit5": 0.8125,
+      "recall5": 0.7152777777777777,
+      "mrr": 0.6013888888888889,
+      "p50ms": 14,
+      "p95ms": 38
+    },
+    {
+      "mode": "lexical+rerank",
+      "n": 48,
+      "hit1": 0.4583333333333333,
+      "hit3": 0.7916666666666666,
+      "hit5": 0.8333333333333334,
+      "recall5": 0.732638888888889,
+      "mrr": 0.6194444444444444,
+      "p50ms": 13,
+      "p95ms": 25
+    },
+    {
+      "mode": "vector",
+      "n": 48,
+      "hit1": 0.5833333333333334,
+      "hit3": 0.7291666666666666,
+      "hit5": 0.8125,
+      "recall5": 0.7465277777777777,
+      "mrr": 0.6645833333333333,
+      "p50ms": 10,
+      "p95ms": 15
+    },
+    {
+      "mode": "hybrid",
+      "n": 48,
+      "hit1": 0.5833333333333334,
+      "hit3": 0.7708333333333334,
+      "hit5": 0.8333333333333334,
+      "recall5": 0.7534722222222223,
+      "mrr": 0.6892361111111112,
+      "p50ms": 23,
+      "p95ms": 46
+    },
+    {
+      "mode": "hybrid+rerank",
+      "n": 48,
+      "hit1": 0.625,
+      "hit3": 0.8333333333333334,
+      "hit5": 0.8541666666666666,
+      "recall5": 0.7743055555555555,
+      "mrr": 0.7194444444444444,
+      "p50ms": 24,
+      "p95ms": 44
+    }
+  ],
+  "mcnemar": [
+    {
+      "a": "lexical",
+      "b": "lexical+rerank",
+      "metric": "hit@1",
+      "aOnly": 2,
+      "bOnly": 3,
+      "p": 1,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "lexical",
+      "b": "vector",
+      "metric": "hit@1",
+      "aOnly": 5,
+      "bOnly": 12,
+      "p": 0.1435,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "lexical",
+      "b": "hybrid",
+      "metric": "hit@1",
+      "aOnly": 2,
+      "bOnly": 9,
+      "p": 0.0654,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "lexical",
+      "b": "hybrid+rerank",
+      "metric": "hit@1",
+      "aOnly": 0,
+      "bOnly": 9,
+      "p": 0.0039,
+      "verdict": "distinguishable"
+    },
+    {
+      "a": "lexical+rerank",
+      "b": "vector",
+      "metric": "hit@1",
+      "aOnly": 8,
+      "bOnly": 14,
+      "p": 0.2863,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "lexical+rerank",
+      "b": "hybrid",
+      "metric": "hit@1",
+      "aOnly": 5,
+      "bOnly": 11,
+      "p": 0.2101,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "lexical+rerank",
+      "b": "hybrid+rerank",
+      "metric": "hit@1",
+      "aOnly": 1,
+      "bOnly": 9,
+      "p": 0.0215,
+      "verdict": "distinguishable"
+    },
+    {
+      "a": "vector",
+      "b": "hybrid",
+      "metric": "hit@1",
+      "aOnly": 4,
+      "bOnly": 4,
+      "p": 1,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "vector",
+      "b": "hybrid+rerank",
+      "metric": "hit@1",
+      "aOnly": 6,
+      "bOnly": 8,
+      "p": 0.7905,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "hybrid",
+      "b": "hybrid+rerank",
+      "metric": "hit@1",
+      "aOnly": 2,
+      "bOnly": 4,
+      "p": 0.6875,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "lexical",
+      "b": "lexical+rerank",
+      "metric": "hit@5",
+      "aOnly": 0,
+      "bOnly": 1,
+      "p": 1,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "lexical",
+      "b": "vector",
+      "metric": "hit@5",
+      "aOnly": 4,
+      "bOnly": 4,
+      "p": 1,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "lexical",
+      "b": "hybrid",
+      "metric": "hit@5",
+      "aOnly": 1,
+      "bOnly": 2,
+      "p": 1,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "lexical",
+      "b": "hybrid+rerank",
+      "metric": "hit@5",
+      "aOnly": 1,
+      "bOnly": 3,
+      "p": 0.625,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "lexical+rerank",
+      "b": "vector",
+      "metric": "hit@5",
+      "aOnly": 5,
+      "bOnly": 4,
+      "p": 1,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "lexical+rerank",
+      "b": "hybrid",
+      "metric": "hit@5",
+      "aOnly": 2,
+      "bOnly": 2,
+      "p": 1,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "lexical+rerank",
+      "b": "hybrid+rerank",
+      "metric": "hit@5",
+      "aOnly": 1,
+      "bOnly": 2,
+      "p": 1,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "vector",
+      "b": "hybrid",
+      "metric": "hit@5",
+      "aOnly": 3,
+      "bOnly": 4,
+      "p": 1,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "vector",
+      "b": "hybrid+rerank",
+      "metric": "hit@5",
+      "aOnly": 3,
+      "bOnly": 5,
+      "p": 0.7266,
+      "verdict": "not distinguishable at n=48"
+    },
+    {
+      "a": "hybrid",
+      "b": "hybrid+rerank",
+      "metric": "hit@5",
+      "aOnly": 0,
+      "bOnly": 1,
+      "p": 1,
+      "verdict": "not distinguishable at n=48"
+    }
+  ],
+  "cases": [
+    {
+      "id": "ftp-deploy-assumption",
+      "category": "incorrect-assumption",
+      "mode": "lexical",
+      "rank": 2,
+      "recall5": 0.5
+    },
+    {
+      "id": "ftp-deploy-assumption",
+      "category": "incorrect-assumption",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 0.5
+    },
+    {
+      "id": "ftp-deploy-assumption",
+      "category": "incorrect-assumption",
+      "mode": "vector",
+      "rank": 5,
+      "recall5": 0.5
+    },
+    {
+      "id": "ftp-deploy-assumption",
+      "category": "incorrect-assumption",
+      "mode": "hybrid",
+      "rank": 4,
+      "recall5": 0.5
+    },
+    {
+      "id": "ftp-deploy-assumption",
+      "category": "incorrect-assumption",
+      "mode": "hybrid+rerank",
+      "rank": 2,
+      "recall5": 0.5
+    },
+    {
+      "id": "pop3-assumption",
+      "category": "incorrect-assumption",
+      "mode": "lexical",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "pop3-assumption",
+      "category": "incorrect-assumption",
+      "mode": "lexical+rerank",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "pop3-assumption",
+      "category": "incorrect-assumption",
+      "mode": "vector",
+      "rank": 4,
+      "recall5": 1
+    },
+    {
+      "id": "pop3-assumption",
+      "category": "incorrect-assumption",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "pop3-assumption",
+      "category": "incorrect-assumption",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "ssl-free-one-click",
+      "category": "simple-factual",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "ssl-free-one-click",
+      "category": "simple-factual",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "ssl-free-one-click",
+      "category": "simple-factual",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "ssl-free-one-click",
+      "category": "simple-factual",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "ssl-free-one-click",
+      "category": "simple-factual",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "default-subdomain-suffix",
+      "category": "simple-factual",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "default-subdomain-suffix",
+      "category": "simple-factual",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "default-subdomain-suffix",
+      "category": "simple-factual",
+      "mode": "vector",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "default-subdomain-suffix",
+      "category": "simple-factual",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "default-subdomain-suffix",
+      "category": "simple-factual",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "cli-install",
+      "category": "simple-factual",
+      "mode": "lexical",
+      "rank": 4,
+      "recall5": 1
+    },
+    {
+      "id": "cli-install",
+      "category": "simple-factual",
+      "mode": "lexical+rerank",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "cli-install",
+      "category": "simple-factual",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "cli-install",
+      "category": "simple-factual",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "cli-install",
+      "category": "simple-factual",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "email-pop3-imap",
+      "category": "simple-factual",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "email-pop3-imap",
+      "category": "simple-factual",
+      "mode": "lexical+rerank",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "email-pop3-imap",
+      "category": "simple-factual",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "email-pop3-imap",
+      "category": "simple-factual",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "email-pop3-imap",
+      "category": "simple-factual",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "postgres-extensions",
+      "category": "database",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 0.5
+    },
+    {
+      "id": "postgres-extensions",
+      "category": "database",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 0.5
+    },
+    {
+      "id": "postgres-extensions",
+      "category": "database",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "postgres-extensions",
+      "category": "database",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "postgres-extensions",
+      "category": "database",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "pgvector-hnsw",
+      "category": "database",
+      "mode": "lexical",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "pgvector-hnsw",
+      "category": "database",
+      "mode": "lexical+rerank",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "pgvector-hnsw",
+      "category": "database",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "pgvector-hnsw",
+      "category": "database",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "pgvector-hnsw",
+      "category": "database",
+      "mode": "hybrid+rerank",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "discover-analytics-tool",
+      "category": "service-discovery",
+      "mode": "lexical",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "discover-analytics-tool",
+      "category": "service-discovery",
+      "mode": "lexical+rerank",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "discover-analytics-tool",
+      "category": "service-discovery",
+      "mode": "vector",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "discover-analytics-tool",
+      "category": "service-discovery",
+      "mode": "hybrid",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "discover-analytics-tool",
+      "category": "service-discovery",
+      "mode": "hybrid+rerank",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "discover-file-storage",
+      "category": "service-discovery",
+      "mode": "lexical",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "discover-file-storage",
+      "category": "service-discovery",
+      "mode": "lexical+rerank",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "discover-file-storage",
+      "category": "service-discovery",
+      "mode": "vector",
+      "rank": 7,
+      "recall5": 0
+    },
+    {
+      "id": "discover-file-storage",
+      "category": "service-discovery",
+      "mode": "hybrid",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "discover-file-storage",
+      "category": "service-discovery",
+      "mode": "hybrid+rerank",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "windows-vps",
+      "category": "english",
+      "mode": "lexical",
+      "rank": 3,
+      "recall5": 0.5
+    },
+    {
+      "id": "windows-vps",
+      "category": "english",
+      "mode": "lexical+rerank",
+      "rank": 5,
+      "recall5": 0.5
+    },
+    {
+      "id": "windows-vps",
+      "category": "english",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "windows-vps",
+      "category": "english",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 0.5
+    },
+    {
+      "id": "windows-vps",
+      "category": "english",
+      "mode": "hybrid+rerank",
+      "rank": 3,
+      "recall5": 0.5
+    },
+    {
+      "id": "set-env-vars",
+      "category": "how-to",
+      "mode": "lexical",
+      "rank": 2,
+      "recall5": 0.5
+    },
+    {
+      "id": "set-env-vars",
+      "category": "how-to",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 0.5
+    },
+    {
+      "id": "set-env-vars",
+      "category": "how-to",
+      "mode": "vector",
+      "rank": 6,
+      "recall5": 0
+    },
+    {
+      "id": "set-env-vars",
+      "category": "how-to",
+      "mode": "hybrid",
+      "rank": 2,
+      "recall5": 0.5
+    },
+    {
+      "id": "set-env-vars",
+      "category": "how-to",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 0.5
+    },
+    {
+      "id": "create-disk-cli",
+      "category": "how-to",
+      "mode": "lexical",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "create-disk-cli",
+      "category": "how-to",
+      "mode": "lexical+rerank",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "create-disk-cli",
+      "category": "how-to",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "create-disk-cli",
+      "category": "how-to",
+      "mode": "hybrid",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "create-disk-cli",
+      "category": "how-to",
+      "mode": "hybrid+rerank",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "health-check-liara-json",
+      "category": "how-to",
+      "mode": "lexical",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "health-check-liara-json",
+      "category": "how-to",
+      "mode": "lexical+rerank",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "health-check-liara-json",
+      "category": "how-to",
+      "mode": "vector",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "health-check-liara-json",
+      "category": "how-to",
+      "mode": "hybrid",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "health-check-liara-json",
+      "category": "how-to",
+      "mode": "hybrid+rerank",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "build-location-germany",
+      "category": "how-to",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "build-location-germany",
+      "category": "how-to",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "build-location-germany",
+      "category": "how-to",
+      "mode": "vector",
+      "rank": 3,
+      "recall5": 1
+    },
+    {
+      "id": "build-location-germany",
+      "category": "how-to",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "build-location-germany",
+      "category": "how-to",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "increase-disk-size",
+      "category": "how-to",
+      "mode": "lexical",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "increase-disk-size",
+      "category": "how-to",
+      "mode": "lexical+rerank",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "increase-disk-size",
+      "category": "how-to",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "increase-disk-size",
+      "category": "how-to",
+      "mode": "hybrid",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "increase-disk-size",
+      "category": "how-to",
+      "mode": "hybrid+rerank",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "wordpress-one-click",
+      "category": "how-to",
+      "mode": "lexical",
+      "rank": 5,
+      "recall5": 1
+    },
+    {
+      "id": "wordpress-one-click",
+      "category": "how-to",
+      "mode": "lexical+rerank",
+      "rank": 5,
+      "recall5": 1
+    },
+    {
+      "id": "wordpress-one-click",
+      "category": "how-to",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "wordpress-one-click",
+      "category": "how-to",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "wordpress-one-click",
+      "category": "how-to",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "deploy-dockerhub-image",
+      "category": "deployment-workflow",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "deploy-dockerhub-image",
+      "category": "deployment-workflow",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "deploy-dockerhub-image",
+      "category": "deployment-workflow",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "deploy-dockerhub-image",
+      "category": "deployment-workflow",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "deploy-dockerhub-image",
+      "category": "deployment-workflow",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "nextjs-deploy",
+      "category": "deployment-workflow",
+      "mode": "lexical",
+      "rank": 4,
+      "recall5": 1
+    },
+    {
+      "id": "nextjs-deploy",
+      "category": "deployment-workflow",
+      "mode": "lexical+rerank",
+      "rank": 3,
+      "recall5": 1
+    },
+    {
+      "id": "nextjs-deploy",
+      "category": "deployment-workflow",
+      "mode": "vector",
+      "rank": 4,
+      "recall5": 1
+    },
+    {
+      "id": "nextjs-deploy",
+      "category": "deployment-workflow",
+      "mode": "hybrid",
+      "rank": 4,
+      "recall5": 1
+    },
+    {
+      "id": "nextjs-deploy",
+      "category": "deployment-workflow",
+      "mode": "hybrid+rerank",
+      "rank": 3,
+      "recall5": 1
+    },
+    {
+      "id": "django-postgres-settings",
+      "category": "platform-specific",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "django-postgres-settings",
+      "category": "platform-specific",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "django-postgres-settings",
+      "category": "platform-specific",
+      "mode": "vector",
+      "rank": 5,
+      "recall5": 1
+    },
+    {
+      "id": "django-postgres-settings",
+      "category": "platform-specific",
+      "mode": "hybrid",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "django-postgres-settings",
+      "category": "platform-specific",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "nextjs-create-next-app-only",
+      "category": "platform-specific",
+      "mode": "lexical",
+      "rank": 3,
+      "recall5": 1
+    },
+    {
+      "id": "nextjs-create-next-app-only",
+      "category": "platform-specific",
+      "mode": "lexical+rerank",
+      "rank": 3,
+      "recall5": 1
+    },
+    {
+      "id": "nextjs-create-next-app-only",
+      "category": "platform-specific",
+      "mode": "vector",
+      "rank": 3,
+      "recall5": 1
+    },
+    {
+      "id": "nextjs-create-next-app-only",
+      "category": "platform-specific",
+      "mode": "hybrid",
+      "rank": 3,
+      "recall5": 1
+    },
+    {
+      "id": "nextjs-create-next-app-only",
+      "category": "platform-specific",
+      "mode": "hybrid+rerank",
+      "rank": 3,
+      "recall5": 1
+    },
+    {
+      "id": "bucket-create",
+      "category": "object-storage",
+      "mode": "lexical",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "bucket-create",
+      "category": "object-storage",
+      "mode": "lexical+rerank",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "bucket-create",
+      "category": "object-storage",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "bucket-create",
+      "category": "object-storage",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "bucket-create",
+      "category": "object-storage",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "bucket-keys",
+      "category": "object-storage",
+      "mode": "lexical",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "bucket-keys",
+      "category": "object-storage",
+      "mode": "lexical+rerank",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "bucket-keys",
+      "category": "object-storage",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "bucket-keys",
+      "category": "object-storage",
+      "mode": "hybrid",
+      "rank": 9,
+      "recall5": 0
+    },
+    {
+      "id": "bucket-keys",
+      "category": "object-storage",
+      "mode": "hybrid+rerank",
+      "rank": 9,
+      "recall5": 0
+    },
+    {
+      "id": "persian-private-network-apps",
+      "category": "persian",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "persian-private-network-apps",
+      "category": "persian",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "persian-private-network-apps",
+      "category": "persian",
+      "mode": "vector",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "persian-private-network-apps",
+      "category": "persian",
+      "mode": "hybrid",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "persian-private-network-apps",
+      "category": "persian",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "persian-liara-json",
+      "category": "persian",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "persian-liara-json",
+      "category": "persian",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "persian-liara-json",
+      "category": "persian",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "persian-liara-json",
+      "category": "persian",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "persian-liara-json",
+      "category": "persian",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "english-env-vars",
+      "category": "english",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "english-env-vars",
+      "category": "english",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "english-env-vars",
+      "category": "english",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "english-env-vars",
+      "category": "english",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "english-env-vars",
+      "category": "english",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "english-postgres-public-access",
+      "category": "english",
+      "mode": "lexical",
+      "rank": 32,
+      "recall5": 0
+    },
+    {
+      "id": "english-postgres-public-access",
+      "category": "english",
+      "mode": "lexical+rerank",
+      "rank": 28,
+      "recall5": 0
+    },
+    {
+      "id": "english-postgres-public-access",
+      "category": "english",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "english-postgres-public-access",
+      "category": "english",
+      "mode": "hybrid",
+      "rank": 8,
+      "recall5": 0
+    },
+    {
+      "id": "english-postgres-public-access",
+      "category": "english",
+      "mode": "hybrid+rerank",
+      "rank": 6,
+      "recall5": 0
+    },
+    {
+      "id": "mixed-deploy-port-flag",
+      "category": "mixed",
+      "mode": "lexical",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "mixed-deploy-port-flag",
+      "category": "mixed",
+      "mode": "lexical+rerank",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "mixed-deploy-port-flag",
+      "category": "mixed",
+      "mode": "vector",
+      "rank": 24,
+      "recall5": 0
+    },
+    {
+      "id": "mixed-deploy-port-flag",
+      "category": "mixed",
+      "mode": "hybrid",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "mixed-deploy-port-flag",
+      "category": "mixed",
+      "mode": "hybrid+rerank",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "mixed-bucket-access-level",
+      "category": "mixed",
+      "mode": "lexical",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "mixed-bucket-access-level",
+      "category": "mixed",
+      "mode": "lexical+rerank",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "mixed-bucket-access-level",
+      "category": "mixed",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "mixed-bucket-access-level",
+      "category": "mixed",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "mixed-bucket-access-level",
+      "category": "mixed",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "mixed-ai-baseurl",
+      "category": "ai-api",
+      "mode": "lexical",
+      "rank": 7,
+      "recall5": 0
+    },
+    {
+      "id": "mixed-ai-baseurl",
+      "category": "ai-api",
+      "mode": "lexical+rerank",
+      "rank": 7,
+      "recall5": 0
+    },
+    {
+      "id": "mixed-ai-baseurl",
+      "category": "ai-api",
+      "mode": "vector",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "mixed-ai-baseurl",
+      "category": "ai-api",
+      "mode": "hybrid",
+      "rank": 17,
+      "recall5": 0
+    },
+    {
+      "id": "mixed-ai-baseurl",
+      "category": "ai-api",
+      "mode": "hybrid+rerank",
+      "rank": 16,
+      "recall5": 0
+    },
+    {
+      "id": "ai-openai-connect",
+      "category": "ai-api",
+      "mode": "lexical",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "ai-openai-connect",
+      "category": "ai-api",
+      "mode": "lexical+rerank",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "ai-openai-connect",
+      "category": "ai-api",
+      "mode": "vector",
+      "rank": 2,
+      "recall5": 0.5
+    },
+    {
+      "id": "ai-openai-connect",
+      "category": "ai-api",
+      "mode": "hybrid",
+      "rank": 4,
+      "recall5": 0.5
+    },
+    {
+      "id": "ai-openai-connect",
+      "category": "ai-api",
+      "mode": "hybrid+rerank",
+      "rank": 3,
+      "recall5": 0.5
+    },
+    {
+      "id": "dotnet-502-after-deploy",
+      "category": "troubleshooting",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "dotnet-502-after-deploy",
+      "category": "troubleshooting",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "dotnet-502-after-deploy",
+      "category": "troubleshooting",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "dotnet-502-after-deploy",
+      "category": "troubleshooting",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "dotnet-502-after-deploy",
+      "category": "troubleshooting",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "econnreset-nextjs",
+      "category": "error-log",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "econnreset-nextjs",
+      "category": "error-log",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "econnreset-nextjs",
+      "category": "error-log",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "econnreset-nextjs",
+      "category": "error-log",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "econnreset-nextjs",
+      "category": "error-log",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "pg-econnrefused",
+      "category": "error-log",
+      "mode": "lexical",
+      "rank": 6,
+      "recall5": 0
+    },
+    {
+      "id": "pg-econnrefused",
+      "category": "error-log",
+      "mode": "lexical+rerank",
+      "rank": 3,
+      "recall5": 0.5
+    },
+    {
+      "id": "pg-econnrefused",
+      "category": "error-log",
+      "mode": "vector",
+      "rank": 21,
+      "recall5": 0
+    },
+    {
+      "id": "pg-econnrefused",
+      "category": "error-log",
+      "mode": "hybrid",
+      "rank": 7,
+      "recall5": 0
+    },
+    {
+      "id": "pg-econnrefused",
+      "category": "error-log",
+      "mode": "hybrid+rerank",
+      "rank": 5,
+      "recall5": 0.5
+    },
+    {
+      "id": "laravel-419",
+      "category": "error-log",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "laravel-419",
+      "category": "error-log",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "laravel-419",
+      "category": "error-log",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "laravel-419",
+      "category": "error-log",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "laravel-419",
+      "category": "error-log",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "gunicorn-worker-timeout",
+      "category": "troubleshooting",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "gunicorn-worker-timeout",
+      "category": "troubleshooting",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "gunicorn-worker-timeout",
+      "category": "troubleshooting",
+      "mode": "vector",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "gunicorn-worker-timeout",
+      "category": "troubleshooting",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "gunicorn-worker-timeout",
+      "category": "troubleshooting",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "cli-command-not-found",
+      "category": "troubleshooting",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "cli-command-not-found",
+      "category": "troubleshooting",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "cli-command-not-found",
+      "category": "troubleshooting",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "cli-command-not-found",
+      "category": "troubleshooting",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "cli-command-not-found",
+      "category": "troubleshooting",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "disk-full-app",
+      "category": "troubleshooting",
+      "mode": "lexical",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "disk-full-app",
+      "category": "troubleshooting",
+      "mode": "lexical+rerank",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "disk-full-app",
+      "category": "troubleshooting",
+      "mode": "vector",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "disk-full-app",
+      "category": "troubleshooting",
+      "mode": "hybrid",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "disk-full-app",
+      "category": "troubleshooting",
+      "mode": "hybrid+rerank",
+      "rank": null,
+      "recall5": 0
+    },
+    {
+      "id": "build-fail-iran-packages",
+      "category": "troubleshooting",
+      "mode": "lexical",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "build-fail-iran-packages",
+      "category": "troubleshooting",
+      "mode": "lexical+rerank",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "build-fail-iran-packages",
+      "category": "troubleshooting",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "build-fail-iran-packages",
+      "category": "troubleshooting",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "build-fail-iran-packages",
+      "category": "troubleshooting",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "ssl-not-issued",
+      "category": "troubleshooting",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 0.5
+    },
+    {
+      "id": "ssl-not-issued",
+      "category": "troubleshooting",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 0.5
+    },
+    {
+      "id": "ssl-not-issued",
+      "category": "troubleshooting",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "ssl-not-issued",
+      "category": "troubleshooting",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 0.5
+    },
+    {
+      "id": "ssl-not-issued",
+      "category": "troubleshooting",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "django-postgres-deploy-workflow",
+      "category": "multi-hop",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 0.333
+    },
+    {
+      "id": "django-postgres-deploy-workflow",
+      "category": "multi-hop",
+      "mode": "lexical+rerank",
+      "rank": 2,
+      "recall5": 0.667
+    },
+    {
+      "id": "django-postgres-deploy-workflow",
+      "category": "multi-hop",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 0.333
+    },
+    {
+      "id": "django-postgres-deploy-workflow",
+      "category": "multi-hop",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 0.667
+    },
+    {
+      "id": "django-postgres-deploy-workflow",
+      "category": "multi-hop",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 0.667
+    },
+    {
+      "id": "domain-then-ssl",
+      "category": "multi-hop",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "domain-then-ssl",
+      "category": "multi-hop",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "domain-then-ssl",
+      "category": "multi-hop",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "domain-then-ssl",
+      "category": "multi-hop",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "domain-then-ssl",
+      "category": "multi-hop",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "app-db-private-network",
+      "category": "cross-service",
+      "mode": "lexical",
+      "rank": 2,
+      "recall5": 0.5
+    },
+    {
+      "id": "app-db-private-network",
+      "category": "cross-service",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 0.5
+    },
+    {
+      "id": "app-db-private-network",
+      "category": "cross-service",
+      "mode": "vector",
+      "rank": 2,
+      "recall5": 0.5
+    },
+    {
+      "id": "app-db-private-network",
+      "category": "cross-service",
+      "mode": "hybrid",
+      "rank": 2,
+      "recall5": 0.5
+    },
+    {
+      "id": "app-db-private-network",
+      "category": "cross-service",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 0.5
+    },
+    {
+      "id": "nextjs-object-storage-uploads",
+      "category": "cross-service",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 0.5
+    },
+    {
+      "id": "nextjs-object-storage-uploads",
+      "category": "cross-service",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 0.5
+    },
+    {
+      "id": "nextjs-object-storage-uploads",
+      "category": "cross-service",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 0.5
+    },
+    {
+      "id": "nextjs-object-storage-uploads",
+      "category": "cross-service",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 0.5
+    },
+    {
+      "id": "nextjs-object-storage-uploads",
+      "category": "cross-service",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 0.5
+    },
+    {
+      "id": "app-send-email",
+      "category": "cross-service",
+      "mode": "lexical",
+      "rank": 2,
+      "recall5": 0.5
+    },
+    {
+      "id": "app-send-email",
+      "category": "cross-service",
+      "mode": "lexical+rerank",
+      "rank": 3,
+      "recall5": 0.5
+    },
+    {
+      "id": "app-send-email",
+      "category": "cross-service",
+      "mode": "vector",
+      "rank": 3,
+      "recall5": 0.5
+    },
+    {
+      "id": "app-send-email",
+      "category": "cross-service",
+      "mode": "hybrid",
+      "rank": 6,
+      "recall5": 0
+    },
+    {
+      "id": "app-send-email",
+      "category": "cross-service",
+      "mode": "hybrid+rerank",
+      "rank": 7,
+      "recall5": 0
+    },
+    {
+      "id": "liara-dns-setup",
+      "category": "domain-dns",
+      "mode": "lexical",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "liara-dns-setup",
+      "category": "domain-dns",
+      "mode": "lexical+rerank",
+      "rank": 2,
+      "recall5": 1
+    },
+    {
+      "id": "liara-dns-setup",
+      "category": "domain-dns",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "liara-dns-setup",
+      "category": "domain-dns",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "liara-dns-setup",
+      "category": "domain-dns",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "cloudflare-flexible",
+      "category": "domain-dns",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "cloudflare-flexible",
+      "category": "domain-dns",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "cloudflare-flexible",
+      "category": "domain-dns",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "cloudflare-flexible",
+      "category": "domain-dns",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "cloudflare-flexible",
+      "category": "domain-dns",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "domain-records-meaning",
+      "category": "domain-dns",
+      "mode": "lexical",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "domain-records-meaning",
+      "category": "domain-dns",
+      "mode": "lexical+rerank",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "domain-records-meaning",
+      "category": "domain-dns",
+      "mode": "vector",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "domain-records-meaning",
+      "category": "domain-dns",
+      "mode": "hybrid",
+      "rank": 1,
+      "recall5": 1
+    },
+    {
+      "id": "domain-records-meaning",
+      "category": "domain-dns",
+      "mode": "hybrid+rerank",
+      "rank": 1,
+      "recall5": 1
+    }
+  ]
+}

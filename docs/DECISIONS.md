@@ -92,9 +92,14 @@ when `AI_EMBEDDINGS_MODEL` is configured, and hybrid fusion switches on
 automatically. The grounding eval (`scripts/evaluate.ts`) runs **lexical-only**
 as shipped, but the four retrieval modes are now **benchmarked** with a local
 multilingual embedding model (`scripts/benchmark-retrieval-modes.ts`, D11):
-hybrid+rerank measurably beats lexical (Recall@1 58.3% vs 43.8%, MRR 0.676 vs
-0.582). The deployed default stays lexical (zero infra, zero latency); hybrid is
-one env var away and now justified by measurement, not assumption.
+hybrid+rerank measurably beats lexical (hit@1 62.5% vs 43.8%, MRR 0.719 vs
+0.601).
+
+**Superseded 2026-08-21 (EP-PRD-02):** shipping the weakest benchmarked mode was
+itself a finding. `AI_EMBEDDINGS_MODEL` now defaults to `local:` — an in-process
+multilingual e5 model that needs no API key — so **hybrid+rerank is the shipped
+default**. Setting the variable to an empty string restores lexical-only for
+deployments that want no model download and ~50 ms less per query.
 **Why**: docs and queries are Persian; normalized lexical search over 1,142
 curated pages is a strong, zero-cost, zero-latency baseline. The prompt: "If a
 simpler local index produces equal or better evaluation results, use the

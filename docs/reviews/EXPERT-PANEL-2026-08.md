@@ -8,6 +8,12 @@
 > The full machine-readable output is committed alongside it as
 > [`expert-panel-2026-08.json`](expert-panel-2026-08.json); the complete issue register is
 > [`EXPERT-PANEL-FINDINGS.md`](EXPERT-PANEL-FINDINGS.md).
+>
+> **▶ Remediation is under way — [`EXPERT-PANEL-STATUS.md`](EXPERT-PANEL-STATUS.md) tracks
+> every finding's live status.** As of 2026-08-21: **74 fixed · 12 partial · 3 blocked ·
+> 81 open**, including 3 of the 4 criticals and 38 of the 47 highs. The scores below are the
+> panel's *original* assessment and are deliberately left unedited — this document is the
+> point-in-time record; the status file is the moving one.
 
 ## 1. Method
 

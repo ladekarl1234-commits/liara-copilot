@@ -47,6 +47,15 @@ const SYNONYM_CANON: Record<string, string> = {
   حذف: 'حذف', پاک: 'حذف', delete: 'حذف', remove: 'حذف',
   // logs
   لاگ: 'لاگ', log: 'لاگ', logs: 'لاگ',
+  // Possessive-clitic forms of the core product nouns ("my disk", "my bucket").
+  // Users type these constantly and the (formal) docs never do, so the form is
+  // both unretrievable and un-matchable at the gate.
+  // ponytail: an explicit list, NOT a suffix stripper — a general -م/-ت/-ش rule
+  // mangles ordinary Persian words (افزایش→افزای, سیستم→سیس, ساخت→ساخ) on the
+  // index side too. Extend the list when evals surface a new one; only reach for
+  // a real morphological analyzer (hazm/parsivar) if it grows past ~30 entries.
+  دیتابیسم: 'دیتابیس', دیسکم: 'دیسک', باکتم: 'باکت', ایمیجم: 'ایمیج',
+  کاربرانم: 'کاربران', قیمتش: 'قیمت', علتش: 'علت', خطاش: 'خطا', لاگش: 'لاگ',
   // certificate / ssl
   گواهی: 'گواهی', certificate: 'گواهی', ssl: 'گواهی',
 };
@@ -117,6 +126,24 @@ const STOPWORDS = new Set([
   'ام', 'ات', 'اش', 'مان', 'تان', 'شان', 'مون', 'تون', 'شون', 'هام',
   'می', 'نمی', 'ها', 'های', 'هایی', 'تر', 'ترین', 'ای', 'خواهم', 'میخواهم',
   'میخوام', 'خوام', 'بکنم', 'کنه',
+  // Colloquial/spoken Persian function words and light verbs. These are how a
+  // real user actually types a question ("چطور ... رو توی ... بذارم که از بیرون
+  // قابل دسترسی نباشن"), and they are NOT in the (written, formal) docs corpus,
+  // so every one of them used to land in the gate's denominator as an
+  // unmatchable token and drag a perfectly-retrieved query below the coverage
+  // floor. They carry zero information about WHICH page answers the question.
+  // (EP-ANS-01; the OOV set was harvested from evals/cases against the index.)
+  'رو', 'توی', 'تو', 'یه', 'موقع', 'جا', 'جایی', 'هر', 'اگه', 'چی',
+  'چیکار', 'چطوریه', 'چنده', 'کدوم', 'قابل', 'بیرون', 'لازمه', 'مناسبه',
+  'شکلیه', 'مدام', 'ظاهرا', 'بعضی', 'کن', 'بگو', 'برایم', 'نگه',
+  // discourse markers — they frame the question, they never identify the page
+  'چیزی', 'چیز', 'درباره', 'منظورم', 'منظورت', 'یعنی', 'حالا', 'خیلی',
+  'واقعا', 'اصلا', 'کاملا', 'ضمنا', 'همچنین', 'بنابراین',
+  // light/auxiliary verb forms (بودن/شدن/داشتن/کردن/گرفتن/دادن conjugations)
+  'بذارم', 'بشن', 'بشم', 'نباشن', 'نباشم', 'نیستن', 'نمیشن', 'هستن', 'هستند',
+  'دارن', 'دارند', 'داشته', 'باشم', 'باشد', 'باشه', 'بتونم', 'میتونم', 'میده',
+  'میدید', 'میاد', 'بدم', 'بده', 'بگیر', 'بگیرم', 'گیرم', 'بیارم', 'ببرم',
+  'بندازم', 'بزنن', 'بفرستم', 'کردنش', 'بهم', 'بهشون', 'خورده', 'شدم',
   // en function words
   'how', 'do', 'does', 'the', 'my', 'your', 'a', 'an', 'to', 'for', 'on',
   'in', 'with', 'can', 'i', 'is', 'are', 'it', 'and', 'of', 'or', 'what',

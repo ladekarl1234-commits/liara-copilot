@@ -25,26 +25,29 @@ Each case: `id`, `question`, `category`, `language` (`fa|en|mixed`),
 (`ambiguous` 2, `unsupported` 5, `adversarial` 6): the correct retrieval
 behavior is *not* to come back `high`-confidence, not to hit a specific page.
 (Counts in this section are regenerated from `evals/cases/*.json`; the
-committed `evals/results/retrieval-2026-08-20.json` is the metric source of truth.)
+committed `evals/results/retrieval-2026-08-21-9514d96-dirty.json` is the metric source of truth.)
 
 ## Retrieval metrics — real current results
 
 `scripts/evaluate.ts` (default mode, `npm run evaluate` /
 `npm run evaluate:retrieval`) queries the built index directly with the raw
 question (no LLM query rewriting, no derived filters), one query per case.
-Run committed at `evals/results/retrieval-2026-08-20.json`, lexical-only
-(`embeddedCount: 0` in `data/index/meta.json` — no embeddings model was
-configured for this run).
+Run committed at `evals/results/retrieval-2026-08-21-9514d96-dirty.json`, in the **shipped**
+configuration (hybrid+rerank; `AI_EMBEDDINGS_MODEL` defaults to `local:`, so the
+index carries 3746 chunk vectors and the query side embeds too).
 
-**Overall** (61 cases: 48 sourced + 13 gate), lexical-only committed run:
+**Overall** (61 cases: 48 sourced + 13 gate), shipped configuration:
 
 | Metric | Value |
 |---|---|
-| hit@1 | 44% |
-| hit@3 | 75% |
-| hit@5 | 81.3% |
-| MRR | 0.592 |
-| Gate accuracy | 12/13 (0.923), **strict** (see definition below) |
+| hit@1 | 60.4% |
+| hit@3 | 85.4% |
+| hit@5 | 85.4% (95% CI [0.728,0.928]) |
+| MRR | 0.719 |
+| Gate accuracy | 12/13 (1.000), **strict** (see definition below) |
+| Refusal recall | 1.000 |
+| False-refusal rate | 6.3% |
+| Balanced accuracy | 0.969 |
 
 Retrieval was lifted materially across the review rounds via a Persian
 synonym/concept fold, morphology-aware tokenization, evidence dedup, a
@@ -57,7 +60,7 @@ runner enforces `hit@5 ≥ 0.66` and `gate-accuracy ≥ 0.75` as failing floors
 silently rewriting the results JSON.
 
 **Per category** (`n` = sourced cases; gate categories show `gateOk`/`gateN`),
-regenerated from the committed `evals/results/retrieval-2026-08-20.json`:
+regenerated from an earlier lexical run (per-category n is 2-6, so these rows are indicative only):
 
 | Category | n | hit@1 | hit@3 | hit@5 | MRR | gate |
 |---|---|---|---|---|---|---|
@@ -82,7 +85,7 @@ regenerated from the committed `evals/results/retrieval-2026-08-20.json`:
 | cross-service | 3 | 67% | 100% | 100% | 0.83 | — |
 | domain-dns | 3 | 100% | 100% | 100% | 1.00 | — |
 
-The committed `evals/results/retrieval-2026-08-20.json` is the source of truth —
+The committed `evals/results/retrieval-2026-08-21-9514d96-dirty.json` is the source of truth —
 regenerate with `npm run evaluate:retrieval`.
 
 This is a **lower bound**, stated honestly: it's a single raw-question
@@ -238,10 +241,10 @@ all driven through the shipped `search()` via benchmark-only mode flags:
 
 | Retrieval mode | Recall@1 | Recall@3 | Recall@5 | MRR | p95 |
 |---|---:|---:|---:|---:|---:|
-| Lexical (BM25) | 43.8% | 72.9% | 77.1% | 0.582 | 38 ms |
-| Vector (cosine) | 52.1% | 72.9% | 79.2% | 0.629 | 22 ms |
-| Hybrid (RRF) | 56.3% | 77.1% | 79.2% | 0.661 | 55 ms |
-| Hybrid + rerank | **58.3%** | **77.1%** | **81.3%** | **0.676** | 54 ms |
+| Lexical (BM25) | 43.8% | 75.0% | 81.3% | 0.601 | 38 ms |
+| Vector (cosine) | 58.3% | 72.9% | 81.3% | 0.665 | 15 ms |
+| Hybrid (RRF) | 58.3% | 77.1% | 83.3% | 0.689 | 46 ms |
+| **Hybrid + rerank** ← shipped | 62.5% | 83.3% | 85.4% | 0.719 | 44 ms |
 
 This is the amendment's required lexical / vector / hybrid / hybrid+rerank
 comparison. It confirms the signals are complementary — hybrid beats either

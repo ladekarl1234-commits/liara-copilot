@@ -6,7 +6,12 @@ import type { ChatEvent, Citation, ErrorCode, SessionState } from '@/types';
 export type UIErrorCode = ErrorCode | 'network';
 
 export interface UIMessage {
+  /** Client-generated and STABLE for the lifetime of the message. It is the React
+   *  key, so it must never change mid-stream: swapping it at `done` unmounts and
+   *  remounts the whole turn, which makes a screen reader re-read the answer. */
   id: string;
+  /** Server-assigned message id, adopted at `done`. Only for /api/feedback. */
+  serverId?: string;
   role: 'user' | 'assistant';
   text: string;
   citations?: Citation[];
@@ -15,11 +20,11 @@ export interface UIMessage {
   verificationNote?: string;
   error?: { code: UIErrorCode; message: string };
   done?: boolean;
+  /** The user pressed stop; the text is a partial answer, not a failure. */
+  stopped?: boolean;
 }
 
 export type ChatStatus = 'idle' | 'streaming';
-
-const SESSION_KEY = 'liara-copilot-session';
 
 export const STAGE_FA: Record<string, string> = {
   understanding: 'در حال درک سوال…',
@@ -79,7 +84,7 @@ export function applyEvent(m: UIMessage, ev: ChatEvent): UIMessage {
     case 'verification':
       return ev.note ? { ...m, verificationNote: ev.note } : m;
     case 'done':
-      return { ...m, id: ev.messageId, done: true };
+      return { ...m, serverId: ev.messageId, done: true };
     case 'error':
       return { ...m, done: true, error: { code: ev.code, message: faError(ev.code) } };
     default:
@@ -102,18 +107,13 @@ export function useChat() {
   const abortRef = useRef<AbortController | null>(null);
   const streamingRef = useRef(false);
 
-  useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem(SESSION_KEY);
-      if (saved) {
-        sessionRef.current = saved;
-        setSessionId(saved);
-      }
-    } catch {
-      // storage blocked — session just won't persist across reloads
-    }
-    return () => abortRef.current?.abort();
-  }, []);
+  // The transcript is not persisted, so a restored session id would silently apply
+  // 24h of server-side history (summary, workflow, hypotheses) to what looks to the
+  // user like a blank chat. The id therefore lives only in memory, for exactly as
+  // long as the messages it belongs to (UX-04).
+  // ponytail: no history restore; if the transcript is ever persisted, restore the
+  // id alongside it rather than on its own.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const patch = (id: string, fn: (m: UIMessage) => UIMessage) =>
     setMessages((ms) => ms.map((m) => (m.id === id ? fn(m) : m)));
@@ -137,20 +137,14 @@ export function useChat() {
 
     const ac = new AbortController();
     abortRef.current = ac;
-    let currentId = asstId;
     const fail = (code: UIErrorCode) =>
-      patch(currentId, (m) => ({ ...m, done: true, error: { code, message: faError(code) } }));
+      patch(asstId, (m) => ({ ...m, done: true, error: { code, message: faError(code) } }));
 
     const handle = (ev: ChatEvent) => {
       switch (ev.type) {
         case 'session':
           sessionRef.current = ev.sessionId;
           setSessionId(ev.sessionId);
-          try {
-            sessionStorage.setItem(SESSION_KEY, ev.sessionId);
-          } catch {
-            // non-fatal
-          }
           break;
         case 'stage':
           setStage(STAGE_FA[ev.stage] ?? null);
@@ -160,9 +154,7 @@ export function useChat() {
           break;
         default: {
           if (ev.type === 'delta') setStage(null);
-          const before = currentId;
-          if (ev.type === 'done') currentId = ev.messageId; // server id becomes the message id
-          patch(before, (m) => applyEvent(m, ev));
+          patch(asstId, (m) => applyEvent(m, ev));
         }
       }
     };
@@ -207,16 +199,24 @@ export function useChat() {
         consume(events);
       }
       consume(parseSSE(buf + decoder.decode() + '\n\n').events);
-      if (!terminal) fail('network'); // stream ended without done/error
+      // stream ended without done/error — unless the user stopped it, which is
+      // not a network failure and must not surface a retry block.
+      if (!terminal && !ac.signal.aborted) fail('network');
     } catch {
       if (!ac.signal.aborted) fail('network');
     } finally {
+      // A user-initiated stop is not a failure: close the partial answer so its
+      // actions (listen, feedback) render instead of leaving it mid-stream.
+      if (ac.signal.aborted) patch(asstId, (m) => ({ ...m, done: true, stopped: true }));
       streamingRef.current = false;
       abortRef.current = null;
       setStatus('idle');
       setStage(null);
     }
   }, []);
+
+  /** Stop the in-flight answer, keeping whatever has already streamed in. */
+  const abort = useCallback(() => abortRef.current?.abort(), []);
 
   const send = useCallback(
     (text: string) => {
@@ -242,11 +242,6 @@ export function useChat() {
     streamingRef.current = false;
     sessionRef.current = null;
     lastUserRef.current = '';
-    try {
-      sessionStorage.removeItem(SESSION_KEY);
-    } catch {
-      // storage blocked — nothing to clear
-    }
     setSessionId(null);
     setMessages([]);
     setContextChips([]);
@@ -254,5 +249,5 @@ export function useChat() {
     setStage(null);
   }, []);
 
-  return { messages, send, retry, reset, status, stage, contextChips, sessionId };
+  return { messages, send, retry, reset, abort, status, stage, contextChips, sessionId };
 }

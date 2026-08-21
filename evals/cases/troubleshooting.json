@@ -4,6 +4,7 @@
     "question": "برنامه دات‌نتم رو دیپلوی کردم، استقرار موفق بود ولی وقتی سایت رو باز می‌کنم خطای 502 Bad Gateway می‌گیرم. مشکل چیه؟",
     "category": "troubleshooting",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/dotnet/fix-common-errors/502-bad-gateway"],
     "expectedFacts": [
       "برنامه باید روی 0.0.0.0 گوش دهد نه localhost",
@@ -19,6 +20,7 @@
     "question": "توی لاگ‌های برنامه Next.js من مدام این خطا میاد: Error: read ECONNRESET at TCP.onStreamRead. چیکار کنم؟",
     "category": "error-log",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/nextjs/fix-common-errors/econnreset"],
     "expectedFacts": [
       "علت عمده کمبود منابع است",
@@ -33,6 +35,7 @@
     "question": "My Node.js app on Liara fails with: Error: connect ECONNREFUSED 127.0.0.1:5432. It works locally with PostgreSQL. What should I fix?",
     "category": "error-log",
     "language": "en",
+    "tunedOn": true,
     "expectedSources": [
       "https://docs.liara.ir/dbaas/postgresql/how-tos/connect-via-platform/nodejs",
       "https://docs.liara.ir/paas/details/envs"
@@ -49,6 +52,7 @@
     "question": "بعد از دیپلوی لاراول روی لیارا موقع submit فرم‌ها این خطا رو می‌گیرم: 419 Sorry, your session has expired. Please refresh and try again.",
     "category": "error-log",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/laravel/fix-common-errors/419-page-expired"],
     "expectedFacts": [
       "مربوط به اعتبارسنجی CSRF و session است",
@@ -63,6 +67,7 @@
     "question": "برنامه جنگوی من روی لیارا این خطا رو میده و ری‌استارت میشه: [CRITICAL] WORKER TIMEOUT (pid:12). درخواست‌های سنگین دارم. راه حل چیه؟",
     "category": "troubleshooting",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/django/fix-common-errors/worker-timeout"],
     "expectedFacts": [
       "متغیر محیطی GUNICORN_TIMEOUT را با مقدار بیشتر (به ثانیه) تنظیم کنید"
@@ -76,6 +81,7 @@
     "question": "I installed the CLI but running it prints: 'liara' is not recognized as an internal or external command. How do I fix this?",
     "category": "troubleshooting",
     "language": "en",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/references/cli/install"],
     "expectedFacts": ["prefix the commands with npx, e.g. npx liara deploy"],
     "forbiddenClaims": [],
@@ -86,6 +92,7 @@
     "question": "برنامه‌ام موقع ذخیره فایل خطای ENOSPC: no space left on device میده. دیسکم پر شده؛ چیکار کنم؟",
     "category": "troubleshooting",
     "language": "fa",
+    "tunedOn": true,
     "expectedSources": ["https://docs.liara.ir/paas/disks/increase-value"],
     "expectedFacts": [
       "حجم دیسک را افزایش دهید",
@@ -100,6 +107,7 @@
     "question": "موقع deploy مرحله build با خطای timeout روی دانلود پکیج‌ها fail میشه (npm ERR! network request failed). ظاهراً بعضی پکیج‌ها از ایران در دسترس نیستن. what can I do?",
     "category": "troubleshooting",
     "language": "mixed",
+    "tunedOn": true,
     "expectedSources": ["https://docs.liara.ir/paas/details/build-location"],
     "expectedFacts": ["موقعیت build را روی germany تنظیم کنید (liara.json یا --build-location)"],
     "forbiddenClaims": [],
@@ -111,6 +119,7 @@
     "question": "دامنه‌ام رو به برنامه وصل کردم ولی گواهی SSL صادر نمیشه و سایت هشدار امنیتی میده. چی رو باید چک کنم؟",
     "category": "troubleshooting",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": [
       "https://docs.liara.ir/paas/domains/add-domain",
       "https://docs.liara.ir/paas/domains/enable-ssl"

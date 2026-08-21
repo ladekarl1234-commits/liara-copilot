@@ -67,10 +67,11 @@ is swept (entries idle >120s dropped) once it exceeds 10,000 keys, so it cannot
 grow unbounded under key churn. Documented single-instance ceiling, same swap
 point as the session store (`docs/DECISIONS.md` D5).
 
-> Residual risk (panel finding `EP-SEC-03`): behind a proxy that *appends* to
-> `x-forwarded-for`, the leftmost hop is client-controlled, so `TRUST_PROXY=on`
-> lets a client mint buckets. The global backstop bounds the damage; taking the
-> right-most untrusted hop is the fix.
+> `EP-SEC-03` (**fixed**): behind a proxy that *appends* to `x-forwarded-for`,
+> the left-most hop is client-controlled, so `TRUST_PROXY=on` used to let a
+> client mint buckets. `clientIp()` now prefers `x-real-ip` — proxies *replace*
+> that header rather than appending to it, so it cannot be forged from the
+> client side. See the remediation section at the end of this document.
 
 ## Input / body limits
 
@@ -185,3 +186,52 @@ field, and logs transcript **length** only — never the transcript text. Return
 `/api/diag` and `/internal` return 404 unless `DIAG_ENABLED=on` (default: on in
 dev, off in prod). They expose measured index/eval/trace data only; the trace
 message is redacted.
+
+## Controls added by the expert-panel remediation (2026-08-21)
+
+The 15-agent review (`docs/reviews/EXPERT-PANEL-2026-08.md`) found real holes.
+What changed, with the finding id:
+
+### Data protection
+- **`EP-SEC-01` — feedback comments bypassed redaction.** A user pasting a token
+  into the "why wasn't this helpful?" box wrote it verbatim to
+  `data/runtime/feedback.jsonl`, and `/api/diag` served it back. Fixed at the
+  shared sink: `recordGap()` now redacts and length-caps, which also covers the
+  two orchestrator writers, and `readGapSummary()` redacts **on read** so lines
+  already on disk cannot be served either. The feedback route redacts the
+  comment before it is written.
+- **`EP-SEC-02` — raw session id on disk.** `feedback.jsonl` stored the raw
+  `sessionId`, which in this codebase's own threat model is a credential
+  (holding it resumes another user's conversation). Now hashed via a shared
+  `hashId()` (`src/lib/security/hash.ts`), so rows still join to
+  `request_metrics` without the id ever landing in a file.
+
+### Abuse / budget
+- **`EP-SEC-04` — cross-site budget drain.** `multipart/form-data` is a
+  CORS-simple type, so any third-party page could make *its* visitors POST 8 MB
+  recordings to `/api/voice/transcribe` on the operator's Soniox key — each with
+  a different IP, so the per-IP limiter never fired. Requests are now rejected
+  (403) when `Sec-Fetch-Site: cross-site`, falling back to an Origin/Host
+  comparison. Non-browser clients (curl, health checks) are unaffected.
+- **`EP-SEC-08` — uniform limiter cost.** A cheap `/api/chat` turn and a 40-second
+  transcription cost the limiter the same single token. The limiter now takes a
+  weighted cost, so voice is billed at its real expense (~5 recordings/min at
+  the default `RATE_LIMIT_RPM=20`).
+- **`EP-SEC-10` — declared MIME type was trusted.** Uploads are now sniffed by
+  magic bytes; a payload that merely *claims* `audio/webm` is rejected 415
+  before it can reach the paid provider.
+- **`EP-SEC-03` — spoofable rate-limit key.** `clientIp()` now prefers
+  `x-real-ip` (proxies *replace* it, so it cannot be appended to) over the
+  left-most `x-forwarded-for` hop, which is client-controlled behind an
+  appending proxy.
+
+### Diagnostics exposure
+- **`EP-SEC-07` — `/api/diag` had no credential.** `DIAG_ENABLED` is an ops flag,
+  but the payload is real user content (recent questions, free-text feedback,
+  pipeline traces). In production a `DIAG_TOKEN` is now required; enabling the
+  flag without setting one keeps diagnostics **closed** rather than publishing
+  user data. Tokens are compared as digests in constant time, so neither length
+  nor a prefix match leaks.
+
+Deliberately not fixed (with reasons) — see `EP-SEC-06`, `EP-SEC-09`,
+`EP-SEC-12` in [the findings register](reviews/EXPERT-PANEL-FINDINGS.md).

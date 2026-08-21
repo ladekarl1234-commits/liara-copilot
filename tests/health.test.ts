@@ -29,7 +29,6 @@ describe('GET /api/health', () => {
     globalThis.__liaraIndex = {
       chunks: [],
       byId: new Map(),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       lexical: {} as any,
       vectors: null,
       meta: { builtAt: 't', chunkCount: 10, anchorCoverage: 0.3, lexicalVersion: 3 },

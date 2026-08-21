@@ -138,7 +138,6 @@ describe('POST /api/chat', () => {
       body: stream,
       duplex: 'half', // required by the Fetch spec when the body is a stream
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const req = new NextRequest('http://localhost/api/chat', init as any);
     expect(req.headers.get('content-length')).toBeNull(); // proves the header path can't save us
     const res = await POST(req);

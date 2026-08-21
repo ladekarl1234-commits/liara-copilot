@@ -9,12 +9,37 @@ import type { GenerateOptions, GenerateResult, ModelProvider } from '@/types';
 
 const MODEL = 'mock-llm-v1';
 
-// A short, citation-shaped grounded answer. The [1] marker lets the citation
-// extractor and the streaming UI run their real code paths under load.
+// A citation-shaped grounded answer. The [1]/[2] markers let the citation
+// extractor and the streaming UI run their real code paths under load, and the
+// length is deliberately >200 chars so the claim-verification call ACTUALLY
+// RUNS — verify.ts skips answers shorter than that, so the old short mock made
+// the load benchmark measure a pipeline missing an entire model call and ~42%
+// of per-turn input tokens (EP-SCALE-03).
 const ANSWER =
-  'برای انجام این کار طبق مستندات لیارا مراحل زیر را دنبال کنید [1]. ' +
-  'ابتدا تنظیمات پروژه را بررسی کنید، سپس دستور استقرار را اجرا کنید. ' +
-  'جزئیات کامل در منبع زیر آمده است.';
+  'برای انجام این کار طبق مستندات رسمی لیارا مراحل زیر را دنبال کنید [1]. ' +
+  'ابتدا تنظیمات پروژه را بررسی کنید و مطمئن شوید فایل پیکربندی در ریشه‌ی پروژه وجود دارد. ' +
+  'سپس متغیرهای محیطی لازم را در پنل تعریف کنید و برنامه را ری‌استارت کنید [2]. ' +
+  'اگر پس از این مراحل همچنان خطا دیدید، لاگ‌های برنامه را بررسی کنید؛ ' +
+  'جزئیات کامل هر مرحله در منابع زیر آمده است.';
+
+// A structurally valid plan. Returning `{}` (the old behavior) always failed
+// PlanSchema and silently dropped the load test onto the deterministic
+// fallbackPlan path — so the benchmark never exercised plan parsing, the
+// LLM-rewritten multi-query retrieval, or the metadata filters that production
+// actually runs (EP-SCALE-03).
+const PLAN = JSON.stringify({
+  intent: 'question',
+  language: 'fa',
+  action: 'answer',
+  statePatch: { context: { product: 'paas' } },
+  retrievalQueries: ['استقرار برنامه روی لیارا', 'تنظیم متغیر محیطی', 'liara deploy'],
+  filters: {},
+});
+
+// The verifier asks for a different shape; answering it with the PLAN would
+// fail its schema and disable verification again. Both are structured calls, so
+// they are told apart the same way the orchestrator's own tests do it.
+const VERDICT = JSON.stringify({ unsupported: [], note: '' });
 
 function usageFor(inChars: number, outText: string) {
   return { inputTokens: Math.ceil(inChars / 4), outputTokens: Math.ceil(outText.length / 4) };
@@ -24,9 +49,12 @@ export class MockLLMProvider implements ModelProvider {
   async generate(opts: GenerateOptions): Promise<GenerateResult> {
     opts.onMeta?.({ model: MODEL });
     const inChars = opts.messages.reduce((n, m) => n + m.content.length, 0);
-    // A structured-output request (plan/verify) gets an empty JSON object; the
-    // callers validate with zod + fallbacks, so the deterministic path still runs.
-    const text = opts.jsonSchema ? '{}' : ANSWER;
+    const system = opts.messages[0]?.content ?? '';
+    const text = opts.jsonSchema
+      ? system.includes('grounding checker')
+        ? VERDICT
+        : PLAN
+      : ANSWER;
     return { text, usage: usageFor(inChars, text), model: MODEL };
   }
 

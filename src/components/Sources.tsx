@@ -33,10 +33,23 @@ export default function Sources({ citations }: { citations: Citation[] }) {
             <a href={c.url} target="_blank" rel="noopener noreferrer nofollow">
               <ExternalIcon />
               {c.n != null && <span className="source-n">[{c.n}]</span>}
-              <bdi dir="ltr">
-                Liara Docs · {c.product} · {c.title}
-                {c.heading ? ` · ${c.heading}` : ''}
+              {/* One <bdi> per homogeneous fragment. A single LTR bdi around the
+                  whole label put the separators and any bracketed Latin run on the
+                  wrong side of the Persian title (99.6% of indexed titles are
+                  Persian); bdi's default `dir=auto` is per-element and correct
+                  here because each fragment is single-script. lang="en" keeps a
+                  Persian TTS voice from mangling the Latin half (A11Y-11). */}
+              <bdi lang="en" dir="ltr">
+                Liara Docs · {c.product}
               </bdi>
+              {' · '}
+              <bdi>{c.title}</bdi>
+              {c.heading ? (
+                <>
+                  {' · '}
+                  <bdi>{c.heading}</bdi>
+                </>
+              ) : null}
             </a>
           </li>
         ))}

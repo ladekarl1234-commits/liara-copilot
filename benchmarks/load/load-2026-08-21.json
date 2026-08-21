@@ -1,12 +1,12 @@
 {
-  "date": "2026-08-20T10:43:51.902Z",
-  "commit": "4f43bb1655de00f2377d1ce4cc7dad816b260fb6",
+  "date": "2026-08-21T01:31:48.265Z",
+  "commit": "9514d96a9698960c785cf9cbfd296f933356f58c",
   "note": "MOCK LLM (LLM_MOCK=on) — measures HTTP/retrieval/streaming plumbing, NOT model quality or model latency.",
   "environment": {
     "node": "v24.16.0",
     "platform": "win32 x64",
     "cpus": 8,
-    "baseUrl": "http://127.0.0.1:3101"
+    "baseUrl": "http://127.0.0.1:3105"
   },
   "config": {
     "total": 400,
@@ -19,46 +19,46 @@
       "ok": 400,
       "errors": 0,
       "successRate": 100,
-      "throughputPerSec": 640,
+      "throughputPerSec": 720.7,
       "latencyMs": {
-        "min": 18,
-        "p50": 36,
-        "p95": 52,
-        "p99": 56,
-        "max": 62,
-        "mean": 37.8
+        "min": 16,
+        "p50": 32,
+        "p95": 51,
+        "p99": 65,
+        "max": 68,
+        "mean": 33.4
       }
     },
     {
-      "label": "chat",
+      "label": "chat-cold",
       "requests": 400,
       "ok": 400,
       "errors": 0,
       "successRate": 100,
-      "throughputPerSec": 104.5,
+      "throughputPerSec": 64.2,
       "latencyMs": {
-        "min": 48,
-        "p50": 232,
-        "p95": 282,
-        "p99": 315,
-        "max": 349,
-        "mean": 232.3
+        "min": 24,
+        "p50": 385,
+        "p95": 418,
+        "p99": 429,
+        "max": 431,
+        "mean": 377.6
       }
     },
     {
-      "label": "diag",
+      "label": "chat-cached",
       "requests": 400,
       "ok": 400,
       "errors": 0,
       "successRate": 100,
-      "throughputPerSec": 255.3,
+      "throughputPerSec": 596.1,
       "latencyMs": {
-        "min": 8,
-        "p50": 95,
-        "p95": 113,
-        "p99": 124,
-        "max": 127,
-        "mean": 94.9
+        "min": 23,
+        "p50": 40,
+        "p95": 50,
+        "p99": 65,
+        "max": 71,
+        "mean": 41
       }
     }
   ]

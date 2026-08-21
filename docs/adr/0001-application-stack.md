@@ -30,7 +30,7 @@ model outputs.
 ## Evidence
 
 - `npm run build` → standalone bundle, first-load JS ~103 kB shared; `/` 202 kB.
-- 186 unit/integration tests run in ~3 s; typecheck clean.
+- 368 unit/integration tests run in ~5 s; typecheck clean; `npm run lint` clean.
 - Module boundaries are real: swapping the LLM provider (ADR 0005) and adding
   voice (ADR 0006) touched only their modules + config, not the pipeline.
 

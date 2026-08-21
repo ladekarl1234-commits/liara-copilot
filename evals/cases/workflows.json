@@ -4,6 +4,7 @@
     "question": "می‌خوام یه پروژه جنگو با دیتابیس PostgreSQL روی لیارا بالا بیارم. مراحل کامل از ساخت دیتابیس تا اتصال برنامه چیه؟",
     "category": "multi-hop",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": [
       "https://docs.liara.ir/dbaas/postgresql/quick-setup",
       "https://docs.liara.ir/paas/django/how-tos/connect-to-db/postgresql",
@@ -22,6 +23,7 @@
     "question": "دامنه mydomain.com رو خریدم. مراحل وصل کردنش به برنامه لیارا و فعال‌سازی SSL چیه؟",
     "category": "multi-hop",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": [
       "https://docs.liara.ir/paas/domains/add-domain",
       "https://docs.liara.ir/paas/domains/enable-ssl"
@@ -40,6 +42,7 @@
     "question": "چطور برنامه و دیتابیسم رو توی یک شبکه خصوصی بذارم که از بیرون قابل دسترسی نباشن و به هم وصل بشن؟",
     "category": "cross-service",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": [
       "https://docs.liara.ir/paas/details/private-network",
       "https://docs.liara.ir/dbaas/postgresql/quick-setup"
@@ -56,6 +59,7 @@
     "question": "I want my Next.js app on Liara to store user uploads in Liara object storage. How do I connect to the bucket from code?",
     "category": "cross-service",
     "language": "en",
+    "tunedOn": true,
     "expectedSources": [
       "https://docs.liara.ir/object-storage/how-tos/connect-via-platform/nextjs",
       "https://docs.liara.ir/object-storage/how-tos/create-key"
@@ -73,6 +77,7 @@
     "question": "می‌خوام از برنامه‌ام روی لیارا ایمیل تایید ثبت‌نام برای کاربرها بفرستم. با چه سرویسی و چطور؟",
     "category": "cross-service",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": [
       "https://docs.liara.ir/email-server/about",
       "https://docs.liara.ir/email-server/how-tos/connect-via-platform/about"
@@ -89,6 +94,7 @@
     "question": "می‌خوام DNS دامنه‌ام رو بدم به سرویس DNS خود لیارا. مراحلش چیه؟",
     "category": "domain-dns",
     "language": "fa",
+    "tunedOn": true,
     "expectedSources": ["https://docs.liara.ir/dns-management-system/quick-setup"],
     "expectedFacts": [
       "از منوی DNS دامنه را بدون www و https اضافه کنید",
@@ -102,6 +108,7 @@
     "question": "My domain is on Cloudflare and my app is on Liara. What SSL mode should I use in Cloudflare?",
     "category": "domain-dns",
     "language": "en",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/domains/add-domain"],
     "expectedFacts": ["in Cloudflare set SSL to Flexible"],
     "forbiddenClaims": ["set Cloudflare SSL to Full (strict)"],
@@ -113,6 +120,7 @@
     "question": "وقتی دامنه رو به برنامه اضافه می‌کنم لیارا سه تا رکورد DNS میده؛ هر کدوم برای چیه؟",
     "category": "domain-dns",
     "language": "fa",
+    "tunedOn": false,
     "expectedSources": ["https://docs.liara.ir/paas/domains/add-domain"],
     "expectedFacts": [
       "رکورد ALIAS/CNAME برای هدایت دامنه به سرور لیارا",

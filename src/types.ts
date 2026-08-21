@@ -35,6 +35,9 @@ export interface RetrievalResult {
   queries: string[]; // actual queries executed
   filters: RetrievalFilters;
   latencyMs: number;
+  /** whether the vector stage actually contributed this query. Config saying
+   * 'hybrid' is not evidence it ran — the embedder can fail (EP-RET-01 follow-up). */
+  vectorUsed?: boolean;
   /** gate signals (also surfaced in /api/diag) */
   signals?: { coverage: number; scorePerToken: number; margin: number };
 }
@@ -238,10 +241,33 @@ export interface TextToSpeechProvider {
 
 // ---------- Observability ----------
 
+/** How a turn actually ended. This is the operational dimension: without it
+ * refusals, clarifications, greetings and injection blocks are indistinguishable
+ * in the log stream, so the product's core quality ratio (refusal rate) cannot
+ * be computed (EP-OBS-04). */
+export type TurnOutcome =
+  | 'answered'
+  | 'cache'
+  | 'degraded' // keyless: grounded sources, no generation
+  | 'sources_fallback' // answer model failed, served evidence instead
+  | 'insufficient' // evidence gate refused
+  | 'clarify'
+  | 'chitchat'
+  | 'troubleshoot_low_evidence'
+  | 'workflow_low_evidence'
+  | 'injection_blocked'
+  | 'client_abort'
+  | 'error';
+
 export interface RequestMetrics {
   requestId: string;
   sessionId: string;
+  /** id of the assistant message this turn produced — the join key between
+   * request_metrics, the pipeline trace and a later feedback row (EP-OBS-01). */
+  messageId?: string;
   intent?: Intent;
+  /** how the turn ended (EP-OBS-04) */
+  outcome?: TurnOutcome;
   product?: string;
   retrievalLatencyMs?: number;
   candidateCount?: number;
@@ -253,5 +279,12 @@ export interface RequestMetrics {
   cacheHit: boolean;
   retrievalConfidence?: string;
   modelRoute?: string;
+  /** 'model' when the planner's structured call succeeded, 'fallback' when it
+   * silently degraded to deterministic regex classification (EP-OBS-02) */
+  planRoute?: 'model' | 'fallback' | 'none';
+  /** whether claim verification actually ran — distinguishes "checked, clean"
+   * from "never checked", which otherwise look identical (EP-OBS-03) */
+  verified?: boolean;
+  unsupportedClaims?: number;
   errorCategory?: string;
 }

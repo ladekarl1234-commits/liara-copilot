@@ -45,6 +45,25 @@ export function useVoice(onTranscript: (text: string) => void) {
   const mountedRef = useRef(true);
   const cancelRef = useRef(false); // stop() pressed while still 'requesting'
 
+  // Declared BEFORE the mount effect that uses them: both are stable (refs +
+  // setState setters only) so every callback below can declare them honestly
+  // instead of closing over a value re-created each render — the stale-closure
+  // hazard `react-hooks/exhaustive-deps` flagged once a linter finally existed
+  // to flag it (EP-MAINT-01).
+  const stopTracks = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  }, []);
+
+  const fail = useCallback(
+    (kind: VoiceError['kind']) => {
+      setError({ kind, message: MSG[kind] });
+      setState('error');
+      stopTracks();
+    },
+    [stopTracks],
+  );
+
   useEffect(() => {
     mountedRef.current = true;
     const supported =
@@ -62,18 +81,7 @@ export function useVoice(onTranscript: (text: string) => void) {
       }
       stopTracks();
     };
-  }, []);
-
-  const stopTracks = () => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-  };
-
-  const fail = (kind: VoiceError['kind']) => {
-    setError({ kind, message: MSG[kind] });
-    setState('error');
-    stopTracks();
-  };
+  }, [stopTracks]);
 
   const send = useCallback(
     async (blob: Blob) => {
@@ -98,7 +106,7 @@ export function useVoice(onTranscript: (text: string) => void) {
         fail('network');
       }
     },
-    [onTranscript],
+    [onTranscript, fail],
   );
 
   const start = useCallback(async () => {
@@ -138,7 +146,7 @@ export function useVoice(onTranscript: (text: string) => void) {
       const name = (e as DOMException)?.name;
       fail(name === 'NotAllowedError' || name === 'SecurityError' ? 'permission' : 'unsupported');
     }
-  }, [state, send]);
+  }, [state, send, fail, stopTracks]);
 
   const stop = useCallback(() => {
     const rec = recorderRef.current;
