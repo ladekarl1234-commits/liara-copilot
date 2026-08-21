@@ -23,7 +23,7 @@ npm run benchmark:retrieval    # == evaluate:retrieval
 ```
 
 Writes `evals/results/retrieval-<date>-<sha>.json`. Latest
-(`retrieval-2026-08-21-84c1c71.json`, 61 cases, shipped hybrid+rerank config):
+(`retrieval-2026-08-21-7896164-dirty.json`, 61 cases, shipped hybrid+rerank config):
 **hit@1 60.4% · hit@3 85.4% · hit@5 85.4% · MRR 0.719 · gate 13/13 · false-refusal 6.3%**.
 
 The runner fails the run via exit code on hit@5, MRR, evidence-recall,

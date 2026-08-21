@@ -8,8 +8,8 @@
     "falseRefusalMax": "(falseRefusalRate * sourced + 1) / sourced = 4/48 = 0.083"
   },
   "measuredAt": "2026-08-21",
-  "runId": "2026-08-21-84c1c71",
-  "commit": "84c1c71cb1225094792313e64881ab08bda061e3",
+  "runId": "2026-08-21-7896164-dirty",
+  "commit": "7896164faa162aec9aabbbe5666f4cdc8c3e8ecd",
   "index": {
     "docsCommit": "31f2ef7adce565341d7eba43492ef5b4f63a7d73",
     "chunkCount": 3746
