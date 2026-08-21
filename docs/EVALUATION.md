@@ -25,14 +25,14 @@ Each case: `id`, `question`, `category`, `language` (`fa|en|mixed`),
 (`ambiguous` 2, `unsupported` 5, `adversarial` 6): the correct retrieval
 behavior is *not* to come back `high`-confidence, not to hit a specific page.
 (Counts in this section are regenerated from `evals/cases/*.json`; the
-committed `evals/results/retrieval-2026-08-21-9514d96-dirty.json` is the metric source of truth.)
+committed `evals/results/retrieval-2026-08-21-84c1c71.json` is the metric source of truth.)
 
 ## Retrieval metrics — real current results
 
 `scripts/evaluate.ts` (default mode, `npm run evaluate` /
 `npm run evaluate:retrieval`) queries the built index directly with the raw
 question (no LLM query rewriting, no derived filters), one query per case.
-Run committed at `evals/results/retrieval-2026-08-21-9514d96-dirty.json`, in the **shipped**
+Run committed at `evals/results/retrieval-2026-08-21-84c1c71.json`, in the **shipped**
 configuration (hybrid+rerank; `AI_EMBEDDINGS_MODEL` defaults to `local:`, so the
 index carries 3746 chunk vectors and the query side embeds too).
 
@@ -85,7 +85,7 @@ regenerated from an earlier lexical run (per-category n is 2-6, so these rows ar
 | cross-service | 3 | 67% | 100% | 100% | 0.83 | — |
 | domain-dns | 3 | 100% | 100% | 100% | 1.00 | — |
 
-The committed `evals/results/retrieval-2026-08-21-9514d96-dirty.json` is the source of truth —
+The committed `evals/results/retrieval-2026-08-21-84c1c71.json` is the source of truth —
 regenerate with `npm run evaluate:retrieval`.
 
 This is a **lower bound**, stated honestly: it's a single raw-question

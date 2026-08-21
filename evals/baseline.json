@@ -8,8 +8,8 @@
     "falseRefusalMax": "(falseRefusalRate * sourced + 1) / sourced = 4/48 = 0.083"
   },
   "measuredAt": "2026-08-21",
-  "runId": "2026-08-21-9514d96-dirty",
-  "commit": "9514d96a9698960c785cf9cbfd296f933356f58c",
+  "runId": "2026-08-21-84c1c71",
+  "commit": "84c1c71cb1225094792313e64881ab08bda061e3",
   "index": {
     "docsCommit": "31f2ef7adce565341d7eba43492ef5b4f63a7d73",
     "chunkCount": 3746
@@ -34,5 +34,5 @@
     "hit5": 0.8125,
     "mrr": 0.5920138888888888
   },
-  "rebaselineReason": "Re-baselined after the expert-panel remediation made hybrid+rerank the shipped default (EP-PRD-02/EP-RET-01). The previous baseline encoded lexical-only numbers, so a silent regression all the way back to lexical would have PASSED CI — the gains would not have been protected. Floors are still derived as measured-minus-one-case."
+  "rebaselineReason": "Re-baselined after the expert-panel remediation made hybrid+rerank the shipped default (EP-PRD-02/EP-RET-01). The previous baseline encoded lexical-only numbers, so a silent regression all the way back to lexical would have PASSED CI — the gains would not have been protected. Floors are still derived as measured-minus-one-case. Re-pointed to the clean-worktree run 2026-08-21-84c1c71 (identical metrics, dirtyWorktree:false) so the accepted numbers are tied to a committed state."
 }
