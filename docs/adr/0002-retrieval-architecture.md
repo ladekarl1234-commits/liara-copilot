@@ -35,8 +35,17 @@ The answer must refuse when evidence is insufficient rather than fabricate.
 
 ## Evidence
 
-- `evals/results/retrieval-2026-08-20.json`: hit@1 0.44 · hit@3 0.75 · hit@5
-  0.813 · MRR 0.592 · gate accuracy 0.923 (lexical-only lower bound).
+- ~~`evals/results/retrieval-2026-08-20.json`: hit@1 0.44 · hit@3 0.75 · hit@5
+  0.813 · MRR 0.592 · gate accuracy 0.923 (lexical-only lower bound).~~ That run
+  is no longer committed; results are now named `retrieval-<date>-<sha>.json` so
+  a re-run cannot clobber one (EP-DATA-04).
+- **Evidence update, 2026-08-21** (the decision below is unchanged; only the
+  numbers behind it moved). `evals/results/retrieval-2026-08-21-84c1c71.json`, in
+  the now-default hybrid+rerank configuration: hit@1 **0.604** · hit@3 **0.854** ·
+  hit@5 **0.854** · MRR **0.719** · refusal recall **11/11** · false-refusal
+  **6.3%**. The lexical figures quoted under *Alternatives* remain the honest
+  lexical-only lower bound and are why the alternative engines were not adopted;
+  see ADR 0008 for the default change.
 - Retrieval runs in-process (no network hop) — an architectural property; no
   isolated retrieval-latency benchmark is committed. The dev trace
   (`/internal`) shows per-request retrieval latency at runtime.
@@ -49,8 +58,9 @@ script (`npm run index`) → can move to a worker without redesign.
 ## Trade-offs
 
 In-memory index size scales with the corpus (fine at 3,746 chunks); a very large
-corpus would push toward an external store. hit@1 0.44 lexical-only is the known
-ceiling the live LLM query-rewrite + optional embeddings mitigate.
+corpus would push toward an external store. hit@1 0.44 lexical-only was the known
+ceiling; enabling the local embeddings by default (ADR 0008) lifted it to 0.604,
+and the live LLM query-rewrite mitigates further on top of that.
 
 ## Revisit when
 

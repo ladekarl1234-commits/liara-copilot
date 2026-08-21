@@ -121,8 +121,11 @@ adequate evidence).
 - **Zero-call paths** (unchanged): greeting, FAQ cache hit, keyless degraded
   mode, and injection refusal make **no** model call. Deterministic work
   (hashing, RRF fusion, schema validation, normalization) never calls the LLM.
-- **Embeddings** are **off by default** (lexical-only), so indexing and query
-  embedding cost is $0 unless `AI_EMBEDDINGS_MODEL` is set (ADR 0004).
+- **Embeddings** are **on by default** since ADR 0008 and still cost **$0**:
+  `AI_EMBEDDINGS_MODEL` defaults to `local:Xenova/multilingual-e5-small`, which
+  runs in-process, so neither the index build nor the query side calls a paid
+  embeddings API. Pointing the variable at a provider-hosted model *does* cost
+  money at both ends; setting it to an empty string is the lexical-only opt-out.
 - **Voice** STT cost is per-Soniox-request and only incurred when the user
   actually speaks; TTS uses the browser (zero cost). Load tests use the mock LLM
   so infrastructure benchmarking spends **no** OpenRouter/Soniox quota.

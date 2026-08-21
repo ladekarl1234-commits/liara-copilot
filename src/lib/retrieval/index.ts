@@ -383,7 +383,16 @@ export async function search(
 
   // evidence convergence: do the two strongest chunks agree on a product?
   const converged = selected.length < 2 || selected[0].chunk.product === selected[1].chunk.product;
-  const confidence = gateConfidence(fused.length, coverage, bestScorePerToken, margin, deps.priorTurns ?? 0, topTitleMatch, converged);
+  const confidence = gateConfidence(
+    fused.length,
+    coverage,
+    bestScorePerToken,
+    margin,
+    deps.priorTurns ?? 0,
+    topTitleMatch,
+    converged,
+    corpusIdf(idx).oov, // log(N) of THIS index — keeps the BM25 bars scale-invariant (EP-RET-12)
+  );
 
   return {
     chunks: selected,
@@ -521,7 +530,37 @@ export function exactCoverage(
 // does not. Everything the escape rescues still lands at 'medium', never 'high'.
 const STRONG_MATCHED_TOKENS = 2;
 const STRONG_MATCHED_IDF = 6; // nats; measured separation is 4.7 (off-topic) vs 7.2+ (answerable)
-const STRONG_SCORE_PER_TOKEN = 40; // ponytail: absolute BM25 density, corpus-scale-dependent like the 'high' threshold; make both percentile-based if the corpus grows materially (EP-RET-12)
+
+// Both BM25 density bars are expressed as MULTIPLES of the corpus IDF scale
+// log(N), not as raw scores (EP-RET-12). A MiniSearch score is a sum of
+// per-term idf ~ log(N/df), so a raw threshold silently changes meaning as the
+// corpus grows: hold df/N fixed, 10x the chunks, and the same page scores ~28%
+// higher, so `high` (which gates the cheap fast-model route and FAQ-cache
+// eligibility) starts firing on evidence that would not have qualified at
+// tuning time. Dividing by log(N) — exactly the quantity `corpusIdf().oov`
+// already computes for the coverage weights — makes both bars scale-invariant.
+//
+// The numerators are the constants as tuned, and the denominator is log(N) at
+// the corpus they were tuned on, so behaviour on today's index is UNCHANGED
+// (verified: `evaluate.ts --retrieval-only` reproduces every metric exactly).
+const IDF_SCALE_AT_TUNING = Math.log(3746); // chunkCount of the index the thresholds were fitted on
+const STRONG_SCORE_DENSITY = 40 / IDF_SCALE_AT_TUNING;
+const HIGH_SCORE_DENSITY = 25 / IDF_SCALE_AT_TUNING;
+
+// MEASURED AND REJECTED (EP-ANS-05): "pass the top fused chunk's cosine into
+// gateConfidence and let a strong vector match satisfy the confidence floor".
+// Probed over all 61 eval cases with the shipped local e5 index, on three
+// candidate statistics — raw top-1 cosine, its z-score against the full 3,746-row
+// matrix, and the cosine gap between rank 1 and rank 10. None of them separates
+// the class the escape must rescue from the class it must not admit:
+//   false refusals to rescue   app-send-email cos .891 z 2.96 | disk-full-app .871 z 2.45 | windows-vps .814 z 2.97
+//   must-refuse to keep out    unsupported-gpu .895 z 3.43 | crlf-bad-interpreter .881 z 2.74 | inj-role-reassign .814 z 3.96
+// unsupported-gpu outscores two of the three rescues on cosine AND all three on
+// z, so every tau that recovers a false refusal also drops refusal-recall below
+// the 1.000 CI floor. e5 cosines on a single-domain corpus live in a ~0.81-0.93
+// band — the model reports "this is Liara documentation", not "this answers the
+// question". Revisit only with an embedding model whose off-topic scores
+// actually fall away, not by re-tuning tau on these 48 cases.
 
 export function gateConfidence(
   resultCount: number,
@@ -531,13 +570,18 @@ export function gateConfidence(
   priorTurns = 0,
   topTitleMatch = true,
   converged = true,
+  /** log(corpus chunk count) — `corpusIdf().oov`. Defaults to the tuning-time
+   * corpus so the constants above keep their calibrated meaning for callers
+   * (tests, benchmarks) that have no index to hand. */
+  idfScale = IDF_SCALE_AT_TUNING,
 ): RetrievalResult['confidence'] {
   if (!resultCount) return 'low';
+  const scoreDensity = scorePerToken / (idfScale || IDF_SCALE_AT_TUNING);
   const strongEvidence =
     topTitleMatch &&
     coverage.matched >= STRONG_MATCHED_TOKENS &&
     (coverage.matchedWeight ?? 0) >= STRONG_MATCHED_IDF &&
-    scorePerToken >= STRONG_SCORE_PER_TOKEN;
+    scoreDensity >= STRONG_SCORE_DENSITY;
   // Nothing matched. Relax to 'medium' ONLY for a pure-stopword follow-up
   // ("قدم بعدی چیست؟") where the raw message carries no informative token but
   // the conversation does. Gibberish with informative tokens that simply don't
@@ -554,7 +598,7 @@ export function gateConfidence(
     converged &&
     coverage.ratio >= 0.7 &&
     coverage.informative >= 2 &&
-    scorePerToken >= 25 &&
+    scoreDensity >= HIGH_SCORE_DENSITY &&
     margin >= 1.05
   )
     return 'high';

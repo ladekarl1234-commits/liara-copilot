@@ -28,16 +28,38 @@ import { detectInjection } from '@/lib/security/injection';
 import { redactSecrets } from '@/lib/security/redact';
 import { hashId } from '@/lib/security/hash';
 
+interface CachedAnswer {
+  text: string;
+  citations: Citation[];
+}
+
 // ponytail: in-memory FAQ answer cache (stateless first-turn Q&A only);
 // single-instance ceiling, same upgrade path as the session store.
-const answerCache = new Map<string, { text: string; citations: Citation[] }>();
+const answerCache = new Map<string, CachedAnswer>();
 const ANSWER_CACHE_MAX = 200;
+// EP-COST-11: single-flight. The answer cache is only WRITTEN after a turn
+// completes, so N simultaneous identical questions each ran the full
+// plan+answer+verify pipeline (a demo-day burst multiplies spend linearly).
+// One entry per in-flight cacheable turn; the leader settles it in its
+// `finally`, so it can never leak.
+const inflight = new Map<string, Promise<CachedAnswer | null>>();
 const lastAction = new Map<string, string>(); // sessionId -> previous action
 
 export function resetAgentCachesForTests(): void {
   answerCache.clear();
+  inflight.clear();
   lastAction.clear();
 }
+
+// EP-COST-05: how many evidence chunks the ANSWER and VERIFY prompts may see.
+// Retrieval still selects up to MAX_EVIDENCE_CHUNKS=8 (retrieval/index.ts), so
+// hit@k and gate accuracy in the eval are measured on exactly the same list as
+// before — only what we pay to SEND shrinks. Justified by the measured gold
+// rank distribution over all sourced eval cases, {1:21, 2:10, 3:5, 4:3}: no
+// gold chunk was ever selected below rank 4, so slots 6-8 carried ~20% of the
+// answer prompt for zero recall. It also closes a real bug — a hallucinated
+// `[7]` used to resolve against a chunk the model was never shown.
+const ANSWER_EVIDENCE_MAX = 5;
 
 function setLastAction(sessionId: string, action: string): void {
   lastAction.delete(sessionId);
@@ -90,6 +112,8 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
   // the first token).
   let emittedDelta = false;
   let streamedAnswer = ''; // partial text already sent; readable from the catch
+  // set only when THIS turn is the single-flight leader for its cache key
+  const flight: { key?: string; settle?: (v: CachedAnswer | null) => void } = {};
 
   const provider: ModelProvider | null = cfg.aiConfigured ? getProvider() : null;
 
@@ -98,7 +122,7 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
    * and log the metrics + trace row. Collapses what used to be an
    * emit/finish/record trio hand-repeated at every branch (EP-ARCH-01). */
   function respond(outcome: TurnOutcome, answerText: string, nextAction?: string): void {
-    finish(emit, session.id, requestId, message, answerText);
+    finish(emit, session, requestId, message, answerText);
     if (nextAction) setLastAction(session.id, nextAction);
     record(outcome);
   }
@@ -186,6 +210,33 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
       emit({ type: 'citations', citations: hit.citations });
       respond('cache', hit.text);
       return;
+    }
+
+    // Single-flight (EP-COST-11): a concurrent identical question waits for the
+    // in-flight leader and serves its result for zero model calls, instead of
+    // running a second full plan+answer+verify. If the leader produced nothing
+    // cacheable (refusal, error, unsupported claims) the follower gets null and
+    // falls through to run the pipeline itself — never a silent empty answer.
+    if (preKey) {
+      const pending = inflight.get(preKey);
+      if (pending) {
+        const shared = await pending;
+        if (shared) {
+          m.cacheHit = true;
+          emit({ type: 'delta', text: shared.text });
+          emit({ type: 'citations', citations: shared.citations });
+          respond('cache', shared.text);
+          return;
+        }
+      } else {
+        flight.key = preKey;
+        inflight.set(
+          preKey,
+          new Promise<CachedAnswer | null>((resolve) => {
+            flight.settle = resolve;
+          }),
+        );
+      }
     }
 
     // Redact pasted secrets (API keys, connection-string passwords, bearer
@@ -303,8 +354,11 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     m.modelRoute = route.label + ':' + route.model;
     const tModel = Date.now();
     let answer = '';
+    // The prompt-visible evidence (EP-COST-05). A prefix slice, so `[n]` in the
+    // answer keeps meaning evidence[n-1] for every n the model can emit.
+    const evidence = retrieval.chunks.slice(0, ANSWER_EVIDENCE_MAX);
     const answerMessages = [
-      { role: 'system' as const, content: answerSystemPrompt(session, retrieval.chunks) },
+      { role: 'system' as const, content: answerSystemPrompt(session, evidence) },
       { role: 'user' as const, content: `<user_data>\n${modelSafe}\n</user_data>` },
     ];
     const stream = provider.generateStream({
@@ -328,12 +382,12 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     const answerInputTokens = answerMessages.reduce((n, msg) => n + estimateTokens(msg.content), 0);
     m.usage = addUsage(m.usage, { inputTokens: answerInputTokens, outputTokens: estimateTokens(answer) });
 
-    const citations = citationsFromAnswer(answer, retrieval.chunks);
+    const citations = citationsFromAnswer(answer, evidence);
     emit({ type: 'citations', citations });
     emitState(emit, session);
 
     // --- verification (optional) ---
-    const v = await verifyAnswer(answer, retrieval.chunks, provider, signal);
+    const v = await verifyAnswer(answer, evidence, provider, signal);
     m.usage = addUsage(m.usage, v.usage);
     m.verified = v.checked;
     m.unsupportedClaims = v.unsupportedCount;
@@ -411,6 +465,14 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     // and lets the next plan call see that this question was already asked
     pushTurn(session, message, `<error:${m.errorCategory}>`);
     record('error');
+  } finally {
+    // Release any follower waiting on this key with whatever this turn actually
+    // cached (null = nothing cacheable, follower runs its own pipeline). Runs on
+    // every exit — success, refusal, abort, throw — so the entry cannot leak.
+    if (flight.key) {
+      flight.settle?.(answerCache.get(flight.key) ?? null);
+      inflight.delete(flight.key);
+    }
   }
 }
 
@@ -453,8 +515,13 @@ function emitState(emit: (e: ChatEvent) => void, session: ReturnType<typeof getO
   if (session.troubleshooting) emit({ type: 'troubleshooting', state: session.troubleshooting });
 }
 
-function finish(emit: (e: ChatEvent) => void, sessionId: string, requestId: string, userMsg: string, answer: string) {
-  const s = getOrCreateSession(sessionId);
+// Takes the live SessionState, NOT its id: re-deriving it with
+// getOrCreateSession() mints a BRAND-NEW session for an id that was evicted
+// (MAX_SESSIONS=5000 LRU) or aged out mid-turn, so the turn was appended to a
+// record the client will never send back — turns reset to 0 and the rolling
+// summary silently vanished (EP-ARCH-09 / EP-REL-09). Every call site already
+// holds the object.
+function finish(emit: (e: ChatEvent) => void, s: SessionState, requestId: string, userMsg: string, answer: string) {
   pushTurn(s, userMsg, answer.slice(0, 300));
   // messageId === requestId (EP-OBS-01): a minted-and-discarded UUID here had
   // no way back to the request_metrics/trace row that produced it, so a

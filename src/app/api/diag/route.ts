@@ -9,14 +9,26 @@ import { loadIndex } from '@/lib/retrieval/index';
 
 export const dynamic = 'force-dynamic';
 
-/** Latest retrieval-eval result JSON (measured metrics), if present. */
-function latestEval(): unknown {
+/**
+ * Latest retrieval-eval result JSON (measured metrics), if present.
+ *
+ * Async: the synchronous readdir/readFile pair stalled the single event loop —
+ * and therefore every concurrent chat stream — on each /internal refresh
+ * (EP-OBS-10).
+ *
+ * ponytail: still resolved from `process.cwd()` and still sorted by filename,
+ * so a result not named `YYYY-MM-DD…` sorts wrong (EP-ARCH-08). Fixing that
+ * properly means an `EVALS_DIR` in the zod Env schema plus a `src/lib/obs/evals.ts`
+ * that sorts on mtime — both outside this route.
+ */
+async function latestEval(): Promise<unknown> {
   try {
     const dir = path.join(process.cwd(), 'evals', 'results');
-    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
+    const files = (await fs.promises.readdir(dir)).filter((f) => f.endsWith('.json')).sort();
     if (!files.length) return null;
-    const raw = fs.readFileSync(path.join(dir, files[files.length - 1]), 'utf8');
-    return { file: files[files.length - 1], ...JSON.parse(raw) };
+    const name = files[files.length - 1];
+    const raw = await fs.promises.readFile(path.join(dir, name), 'utf8');
+    return { file: name, ...JSON.parse(raw) };
   } catch {
     return null;
   }
@@ -46,7 +58,7 @@ export async function GET(req: NextRequest) {
       voiceConfigured: cfg.voiceConfigured,
     },
     index,
-    eval: latestEval(),
+    eval: await latestEval(),
     traces: lastTraces(20),
     gaps: readGapSummary(),
   });

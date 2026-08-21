@@ -61,7 +61,12 @@ dashboard as the primary surface; autoplaying spoken answers.
 - **FR4 Evidence gate.** Below a confidence threshold, do not answer; refuse
   honestly or ask one targeted clarification. No fabricated absence claims.
 - **FR5 Citations.** Cite specific page + section anchor
-  (`https://docs.liara.ir/...#anchor`), never just the docs root.
+  (`https://docs.liara.ir/...#anchor`), never just the docs root. Measured:
+  only **36.6%** of chunks carry an authored `<Section id=…>` anchor, so the rest
+  cite a `#:~:text=` highlight fragment on the chunk's opening sentence —
+  36.6% anchored + 57.4% text-fragment = **93.9% deep-linked**, 6.1% land at the
+  page top (`EP-PRD-06` / `EP-RET-09`; re-measured by
+  `tests/docs-numbers.test.ts`).
 - **FR6 Claim verification.** A post-answer stage checks Liara-specific claims
   against evidence; unsupported claims are corrected/flagged.
 - **FR7 Conversation memory.** Track framework/packageManager/database/goal/
@@ -114,13 +119,17 @@ interfaces; no hard coupling to one browser API or vendor.
 
 ## 12. Retrieval & grounding requirements
 
-Hybrid retrieval is implemented (lexical + optional vector, RRF + rerank) and
+Hybrid retrieval is implemented (lexical + vector, RRF + rerank) and
 **benchmarked** (`benchmarks/retrieval/`, local `multilingual-e5-small`
-embeddings): the four modes were compared on the sourced eval cases — Recall@1
-lexical 43.8% → vector 52.1% → hybrid 56.3% → **hybrid+rerank 58.3%** (MRR 0.582
-→ 0.676). Hybrid+rerank is the strongest; the deployed default is lexical (zero
-infra) with hybrid available when an embeddings model is configured. The
-grounding-quality eval (`evals/`) remains lexical-only as shipped. Answers are
+embeddings): five modes compared on the 48 sourced eval cases — hit@1 lexical
+43.8% → lexical+rerank 45.8% → vector 58.3% → hybrid 58.3% → **hybrid+rerank
+62.5%** (MRR 0.601 → 0.719). Hybrid+rerank is the strongest **and is the
+deployed default**: `AI_EMBEDDINGS_MODEL` defaults to the local model, so hybrid
+runs with no API key and no configuration (ADR 0008, superseding ADR 0004 —
+the earlier lexical-only default was the panel's `EP-PRD-02` / `EP-RET-01`:
+we shipped the weakest mode we had benchmarked). The grounding eval
+(`evals/`) now runs in that same shipped configuration. Setting
+`AI_EMBEDDINGS_MODEL=''` is the documented opt-out to lexical-only. Answers are
 grounded only in retrieved evidence; unknown → say so.
 
 ## 13. Citation behavior
@@ -140,7 +149,8 @@ user messages and retry. Health returns 503 when the index is unloadable.
 Server-side keys (OpenRouter, Soniox) never reach the browser/logs/errors;
 prompt-injection detector + `<user_data>` fencing; secret redaction (FR13);
 per-IP rate limit + global backstop; streamed body caps; safe Markdown (no raw
-HTML sink); automated secret scan before completion.
+HTML sink). A repo-wide secret scan is a **stated intent, not an implemented
+control** — see §20.1 `AC-SEC-001`.
 
 ## 16. Performance requirements
 
@@ -165,9 +175,10 @@ buffer of pipeline traces for `/internal`.
 ## 19. Evaluation requirements
 
 Fixed dataset (60+ cases across Persian/English/mixed/errors/multi-hop/
-unsupported/citation-trap). Retrieval metrics (Recall@1/3/5, MRR) with enforced
-floors in CI. Load benchmark with mock LLM. Bounded live-model smoke test kept
-separate from high-volume load.
+unsupported/citation-trap). Retrieval metrics (hit@1/3/5, MRR, evidence-recall,
+refusal-recall, false-refusal rate) with floors enforced in CI, **derived** from
+`evals/baseline.json` rather than hand-typed. Load benchmark with mock LLM.
+Bounded live-model smoke test kept separate from high-volume load.
 
 ## 20. Acceptance criteria
 
@@ -176,6 +187,12 @@ separate from high-volume load.
   (page + anchor where available).
 - **AC-RAG-002** Unsupported Liara claims are not fabricated; the gate refuses.
 - **AC-RAG-003** Exact identifiers (`DATABASE_URL`, `502`) retrieve the right page.
+  Enforced floor: hit@5 on the 48 sourced eval cases, **derived from
+  `evals/baseline.json`** (accepted value minus one case) and failed via exit
+  code by `npm run evaluate:retrieval` in CI. Currently accepted at hit@5 0.854.
+  This criterion carried no threshold until the panel review; the historical
+  amendment from ≥ 0.8 to ≥ 0.6 recorded in `docs/DECISIONS.md` D9 belongs here
+  (`EP-DOCS-09`).
 - **AC-VOICE-001** A supported browser captures voice input and converts it to a
   query via the server STT provider.
 - **AC-VOICE-002** Mic permission denied / unsupported / empty / failed
@@ -197,11 +214,59 @@ separate from high-volume load.
 - **AC-PROVIDER-001** With `OPENROUTER_API_KEY` set, real generation works with no
   architecture change; with it empty, the app still runs (mock/keyless).
 
+### 20.1 Traceability — which test proves which criterion
+
+There are **17** AC-* criteria above. Before the panel review only two of them
+(`AC-SEC-002`, `AC-VOICE-002`) appeared anywhere outside this file, so "AC met"
+could not be checked without re-deriving the mapping by hand (`EP-DOCS-05`).
+
+The table below is the mapping. **Where nothing automated proves a criterion,
+the row says so** — an unproven AC must be visibly different from a proven one,
+not quietly absent. Test names are `describe` + `it` as `npx vitest run` prints
+them; re-derive with `npx vitest run --reporter=json`.
+
+| AC | Automated evidence | Gap |
+|---|---|---|
+| `AC-CHAT-001` | `tests/orchestrator.test.ts` → *answers a grounded question with citations and done*; `tests/route-chat.test.ts` → *streams SSE with the right headers on a valid request* | — |
+| `AC-RAG-001` | `tests/orchestrator.test.ts` → *answers a grounded question with citations and done*; `tests/retrieval.test.ts` → *citationUrl appends #anchor with a guaranteed trailing slash* + *falls back to a text-fragment deep link when there is no anchor*; `tests/ui-markdown-citations.test.ts` (6) | — |
+| `AC-RAG-002` | `tests/orchestrator.test.ts` → *gates low-confidence retrieval into an honest insufficient answer*; `tests/gate.test.ts` (17); `tests/retrieval-panel-fixes.test.ts` → *still refuses a question the docs genuinely do not answer*; eval refusal-recall 11/11 | — |
+| `AC-RAG-003` | `tests/persian.test.ts` → *tokenizeFa splits DATABASE_URL into joined identifier + parts*; `tests/retrieval.test.ts` → *search returns non-low confidence for an exact-match query*; the hit@5 floor in `npm run evaluate:retrieval` | **Partial.** Page-level correctness is only measured *in aggregate* (hit@5 0.854). No test pins a specific identifier→page pair, and `502` in particular is untested. |
+| `AC-VOICE-001` | `tests/voice-route.test.ts` → *transcribes and returns text when configured* | **Partial.** Server half only. Browser `MediaRecorder` capture (`useVoice.ts`) has no automated test — verified manually. |
+| `AC-VOICE-002` | `tests/voice-route.test.ts` → *503 voice_unavailable when STT is not configured*, *rejects an empty recording with 400*, *maps stt_empty to 422*, *maps a transcription failure to 502* | **Partial.** The four failure states are covered server-side. "Never discards typed text" is structural (`useVoice.ts:36`, transcript is appended by the caller, never assigned) and **manually verified** — no test. |
+| `AC-VOICE-003` | `tests/ui-a11y-contract.test.ts` → *the listen button names its action rather than relying on flipping text* | **Partial.** Control presence + a11y only; `SpeechSynthesis` playback is manual. |
+| `AC-RTL-001` | `tests/ui-a11y-contract.test.ts` → *Markdown sets one base direction from the answer language* + *citation labels no longer force LTR over Persian titles*; `tests/ui-markdown-citations.test.ts` → *hasPersian drives one base direction per answer* | — |
+| `AC-CONTEXT-001` | `tests/orchestrator.test.ts` → *remembers session context across turns*; `tests/agent-units.test.ts` → *DOES inherit the session platform for a topic-less follow-up*, *does NOT inherit a stale session platform when the new message has its own topic* | — |
+| `AC-FIX-001` | `tests/orchestrator.test.ts` → *runs the Fix flow (ranked hypotheses + state) even when retrieval is weak*; `tests/agent-units.test.ts` → *seeds ranked troubleshooting hypotheses deterministically (keyless Fix)* + the 8 *Fix-flow continuation* tests | **Partial.** "One diagnostic step, not a wall of causes" is not asserted; the keyless message still lists the ledger (`EP-AGT-12`, open). |
+| `AC-GUIDE-001` | `tests/orchestrator.test.ts` → *runs the Guide flow (workflow checklist) for a deploy intent even keyless* + *emits a workflow checklist event when the plan builds one*; `tests/agent-units.test.ts` → *seeds a deployment workflow (Guide) for a deploy intent* + the 3 *workflow lifecycle* tests | — |
+| `AC-SEC-001` | — | **No automated evidence.** The claim rests on structure: keys are read only in server modules (`docs/SECURITY.md` §Server-side provider keys names them — `config.ts`, `ai/provider.ts`, `speech/soniox.ts`) and log fields matching `apikey`/`authorization`/`token` are stripped. Nothing *asserts* the absence in API/HTML/bundle output, and §15's "automated secret scan before completion" is **not implemented** — there is no such npm script or CI step. |
+| `AC-SEC-002` | `tests/redact.test.ts` (6, titled with the AC id); `tests/redact-e2e.test.ts` (2, incl. *does NOT leak a turn-1 secret to the model on turn 2 via the session summary*); `tests/security-hardening.test.ts` → *EP-SEC-05* (6) | — |
+| `AC-SEC-003` | `tests/injection.test.ts` → *orchestrator refuses injection before any model call — emits a refusal and never touches the provider* (+5 detector tests); `tests/security-hardening.test.ts` → *EP-SEC-11* (2) | **Partial.** The detector is a pattern list; `EP-SEC-11` (partial) records that novel paraphrases still get through. |
+| `AC-COST-001` | `tests/integration-realindex.test.ts` → *caches a high-confidence first-turn answer and replays it with no model calls*; `tests/agent-units.test.ts` → *treats a greeting as chitchat with no retrieval* + *recognises ordinary pleasantries, not just the exact word*; `tests/orchestrator.test.ts` → *degrades gracefully without a configured provider (sources only)* | — |
+| `AC-OBS-001` | `tests/ai-provider-config.test.ts` → *generate returns text + model + usage and reports model via onMeta*; `tests/orchestrator-observability.test.ts` (12) | **Partial.** The `onMeta` plumbing and the trace fields are tested; **no test asserts that a served request emits both the requested and the actual model** into `request_metrics`. Verified by reading `/internal`. |
+| `AC-PROVIDER-001` | `tests/ai-provider-config.test.ts` → the 5 *provider resolution (config)* tests incl. *is keyless (not configured) when nothing is set*; `tests/orchestrator.test.ts` → *degrades gracefully without a configured provider (sources only)* | **Partial.** The keyless and mock halves are proven. "Real generation works" against a live key has never been executed — that is the still-open critical `EP-PRD-01`. |
+
+Score, stated plainly: **8 of 17 fully proven by automated tests, 8 partial, 1
+(`AC-SEC-001`) with no automated evidence at all.** §15 also claims an
+"automated secret scan before completion" that does not exist; that sentence is
+an intent, not a control.
+
 ## 21. Current-phase limitations
 
-Keyless troubleshooting ledger is a deterministic snapshot; retrieval hit@1 is
-lexical-only lower bound; single-instance in-memory session/rate/cache; CSP
-allows `unsafe-inline` (Next hydration; no HTML sink). See `docs/reviews/`.
+Keyless troubleshooting ledger is a deterministic snapshot; single-instance
+in-memory session/rate/cache; CSP allows `unsafe-inline` (Next hydration; no HTML
+sink). Retrieval hit@1 (60.4%) is a raw single-query lower bound — the live
+pipeline adds query rewriting and conversation-state filters the eval does not
+exercise. Answer *correctness* has never been measured end-to-end: that needs a
+real provider key (`EP-PRD-01`, the one open critical).
+
+**Corpus ceiling.** The index covers 11 `docs.liara.ir` product sections (`paas`,
+`ai`, `one-click-apps`, `dbaas`, `iaas`, `email-server`, `references`,
+`object-storage`, `mirrors`, `dns-management-system`, `overview`). There is no
+pricing/plans page, no status or changelog feed and no account API, so pricing,
+quota, incident and "why is *my* app down" questions are structurally
+unanswerable and are refused honestly. The deflectable share of support volume is
+therefore *doc-answerable questions only* — see `EP-PRD-07` and §22. See
+`docs/reviews/`.
 
 ## 22. Future: API integration
 

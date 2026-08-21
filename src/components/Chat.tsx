@@ -322,7 +322,12 @@ export default function Chat() {
         <div className="landing">
           <div className="landing-inner">
             <img src="/liara-logo.jpg" alt="لیارا" width={60} height={60} className="landing-logo" />
-            <h1 className="headline">دیگه لازم نیست، مستندات لیارا رو بخونی!</h1>
+            {/* PRD-11: the old headline ("دیگه لازم نیست، مستندات لیارا رو بخونی!")
+                promised what the honest-refusal design is built to violate — at
+                hit@1 well under 100% and a gate that deliberately refuses on low
+                confidence, a first-turn refusal read as the product failing rather
+                than as the product being careful. This promises what actually ships. */}
+            <h1 className="headline">پاسخ مستند و ارجاع‌دار از مستندات رسمی لیارا</h1>
             <div style={{ width: '100%', animation: 'fadeUp .6s ease .55s both' }}>
               <Composer large onSend={send} onStop={abort} streaming={streaming} />
             </div>
@@ -331,7 +336,11 @@ export default function Chat() {
                 <button key={c.label} type="button" className="chip" onClick={() => send(c.message)}>{c.label}</button>
               ))}
             </div>
-            <p className="landing-note">پاسخ‌ها بر پایه‌ی مستندات رسمی لیارا (docs.liara.ir) هستند.</p>
+            {/* The scope line, under the composer: says up front that the corpus is
+                docs-only and that a miss ends in an honest "نمی‌دانم" (PRD-11). */}
+            <p className="landing-note">
+              پاسخ‌ها فقط از مستندات رسمی لیارا (docs.liara.ir) ساخته می‌شوند؛ اگر پاسخ در مستندات نباشد، صادقانه می‌گویم که نمی‌دانم.
+            </p>
           </div>
         </div>
       </main>

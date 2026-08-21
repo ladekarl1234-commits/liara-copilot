@@ -1,3 +1,14 @@
+> ## ⚠️ HISTORICAL — superseded by [`/spec.md`](../spec.md)
+>
+> This is the **first-round** spec, kept for the record. It is **not** the source
+> of truth and is not maintained: its `AC1..AC11` numbering was replaced by the
+> `AC-*-NNN` ids in `/spec.md` §20, and every metric quoted below (hit@5 0.708,
+> gate 7/9, `HIT5_MIN`/`GATE_MIN` as hand-typed constants) is from a superseded
+> run and a superseded harness. Live numbers: `evals/results/` and
+> `docs/EVALUATION.md`. Live acceptance criteria and their test traceability:
+> `/spec.md` §20 / §20.1. Two spec files with two numbering schemes was panel
+> finding `EP-DOCS-09`.
+
 # Liara Copilot — Specification (Phase 1: local, no real deploy)
 
 ## Problem

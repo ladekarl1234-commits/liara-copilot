@@ -4,8 +4,11 @@ import { useCallback, useEffect, useState } from 'react';
 
 // Optional "🔊 Listen" — reads an answer aloud with the browser's built-in
 // SpeechSynthesis (zero cost, no vendor). Never autoplays; the user toggles it.
-// Implements the TextToSpeechProvider contract so a future server/vendor TTS is
-// a drop-in swap.
+// ARCH-06: this hook does NOT implement types.ts `TextToSpeechProvider`, and the
+// comment that said it did was wrong. The surface here is id-based toggle state
+// (`speakingId`/`toggle`) driven by the message list, which no speak/stop provider
+// satisfies — a server-TTS swap would be a rework of this hook and its call site
+// in Chat.tsx, not a drop-in. The unused interface should be deleted with it.
 
 function stripMarkdown(md: string): string {
   return md

@@ -4,6 +4,8 @@
 
 import crypto from 'node:crypto';
 import type { AgentPlan, Hypothesis, SessionState } from '@/types';
+import { log } from '@/lib/obs/log';
+import { hashId } from '@/lib/security/hash';
 import { redactSecrets } from '@/lib/security/redact';
 
 const MAX_SESSIONS = 5000;
@@ -11,6 +13,34 @@ const TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_SUMMARY_CHARS = 900;
 
 const store = new Map<string, SessionState>();
+
+let ceilingWarned = false;
+
+/**
+ * The single-instance ceiling, said out loud once (EP-SCALE-01).
+ *
+ * Conversation state is this Map. Behind a non-sticky load balancer with N
+ * instances, ~(N-1)/N of follow-up turns land on a process that has never seen
+ * the id, so summary, profile, troubleshooting ledger and workflow silently
+ * vanish mid-conversation and Fix/Guide degrade to Ask with NO error anywhere.
+ * Until the store is externalized, a single instance (or sticky sessions) is a
+ * hard prerequisite, not a preference — so it is a startup warning in
+ * production and a warning the first time the symptom is actually observed,
+ * rather than something an operator discovers from a confused user.
+ */
+function warnSingleInstanceCeiling(): void {
+  if (ceilingWarned) return;
+  ceilingWarned = true;
+  log('warn', 'session_store_single_instance', {
+    detail:
+      'Conversation state is in-process. Run ONE instance, or enable sticky sessions: ' +
+      'with N instances behind a non-sticky LB roughly (N-1)/N of follow-up turns silently start a new conversation.',
+    maxSessions: MAX_SESSIONS,
+    ttlMs: TTL_MS,
+  });
+}
+
+if (process.env.NODE_ENV === 'production') warnSingleInstanceCeiling();
 
 export function getOrCreateSession(id?: string): SessionState {
   if (id) {
@@ -20,6 +50,16 @@ export function getOrCreateSession(id?: string): SessionState {
       store.set(id, s);
       return s;
     }
+    // The client HELD an id and this process cannot resolve it, so the turn
+    // below silently starts a brand-new conversation. That is the visible shape
+    // of both the multi-instance failure and eviction/expiry — make it loud in
+    // the logs at least (EP-SCALE-01). Hashed: the raw id is a credential.
+    log('warn', 'session_not_resolved', {
+      sessionId: hashId(id),
+      reason: s ? 'expired' : 'unknown',
+      stored: store.size,
+    });
+    warnSingleInstanceCeiling();
   }
   // Unknown/expired ids are NEVER adopted: a client cannot pre-create a
   // guessable session id and wait for someone to collide with it. Session
@@ -187,6 +227,8 @@ function clean<T extends object>(o: T): Partial<T> {
   return out;
 }
 
+/** @internal test-only; do not call from app code (EP-MAINT-08). */
 export function resetSessionsForTests(): void {
   store.clear();
+  ceilingWarned = false;
 }

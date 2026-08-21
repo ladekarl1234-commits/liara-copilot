@@ -26,6 +26,19 @@ async function main() {
   console.log(
     `[build-index] ${stats.files} files -> ${stats.chunks} chunks; anchors on ${stats.anchored} (${(anchorCoverage * 100).toFixed(1)}%); skipped ${stats.skipped.length}`,
   );
+  // Deep-anchor coverage is the product's verifiability differentiator and the
+  // only thing that stops a citation degrading to a bare page link, yet nothing
+  // guarded it — it could halve on an upstream docs refactor (a `<Section id=>`
+  // rename, an MDX sibling moving) and no artifact would say so (EP-ANS-09 /
+  // EP-RET-09). Floor set just under the measured 36.6%, deliberately tight:
+  // a floor 15pp below measured passes the regression it exists to catch.
+  const ANCHOR_COVERAGE_FLOOR = 0.35;
+  if (anchorCoverage < ANCHOR_COVERAGE_FLOOR) {
+    throw new Error(
+      `deep-anchor coverage ${(anchorCoverage * 100).toFixed(1)}% is below the ${(ANCHOR_COVERAGE_FLOOR * 100).toFixed(0)}% floor — ` +
+        'the docs corpus likely changed how <Section id=…> is authored. Investigate src/lib/docs/ingest.ts loadAnchors() before lowering this.',
+    );
+  }
 
   // lexical. NOTE: 491 chunks share a byte-identical body with another page
   // (boilerplate sections copied across products) and EP-RET-07 proposed

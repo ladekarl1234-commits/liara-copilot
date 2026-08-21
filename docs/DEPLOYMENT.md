@@ -82,14 +82,23 @@ missing API key.
 
 **Current (baked at image build)** — the only one actually implemented.
 `Dockerfile`'s `build` stage runs `npm run sync-docs && npx tsx
-scripts/build-index.ts` with no `AI_*` build args declared, so the image
-**always** ships a **lexical-only** index regardless of what's set at
-runtime — there is no build-arg/secret plumbing in the Dockerfile for
-`AI_EMBEDDINGS_MODEL`/`AI_BASE_URL`/`AI_API_KEY` today. To ship a
-vector-enabled image, `data/index` would need to be built out-of-band (`npm
-run index` locally or in CI, with those three vars set) and `COPY`'d into
-the runner stage in place of the current build step — the Dockerfile would
-need a small edit to support this; it is not wired up now.
+scripts/build-index.ts` with no `AI_*` build args declared. Since ADR 0008 that
+is no longer the same thing as a lexical-only image: `AI_EMBEDDINGS_MODEL`
+defaults to `local:Xenova/multilingual-e5-small`, which needs no key, so the
+build stage embeds the corpus **provided the build has network access to fetch
+the model weights once**. In a no-network or cache-only build, embedding fails
+and the image falls back to a lexical index — check `embeddedCount` in
+`data/index/meta.json` inside the image rather than assuming either outcome.
+**Not verified in this repo:** no containerised index build has been run against
+the local-embeddings default; the number that has been measured
+(`embeddedCount: 3744`) comes from a host `npm run index`.
+
+There is still no build-arg/secret plumbing for
+`AI_EMBEDDINGS_MODEL`/`AI_BASE_URL`/`AI_API_KEY`, so a **provider-hosted**
+embedding model cannot be used at image-build time. For that, build `data/index`
+out-of-band (`npm run index` locally or in CI with those vars set) and `COPY` it
+into the runner stage in place of the build step — a small Dockerfile edit that
+is not wired up today.
 
 **Future (disk + rebuild job)** — point `INDEX_DIR` at a mounted persistent
 disk and run `npm run index` as a separate scheduled or manually-triggered

@@ -1,6 +1,20 @@
 # ADR 0004 — Embeddings: optional, provider-agnostic, lexical-default
 
-**Status:** Accepted (Phase I)
+**Status:** ⛔ **Superseded by [ADR 0008](0008-hybrid-by-default-local-embeddings.md)**
+
+> This ADR's own *Revisit when* condition fired: the hybrid A/B **did** show a
+> specific multilingual model materially lifting Persian hit@k. The evidence was
+> appended to this file in place instead of being recorded as a new decision,
+> against the supersede-don't-edit rule in [`README.md`](README.md) — panel
+> finding `EP-DOCS-08`. ADR 0008 makes hybrid+rerank with a local
+> `multilingual-e5-small` the default and carries the reasoning.
+>
+> The text below is preserved as the historical record. The **lexical-default
+> decision it states is no longer in force**, and the "Evidence" section quotes a
+> superseded run (`retrieval-2026-08-20.json`, hit@5 0.813 / gate 0.923) against
+> hand-typed floors that no longer exist. What survives from this ADR: embeddings
+> are still provider-agnostic, the model string is still configuration rather
+> than code, and vectors are still cached by chunk-hash + model.
 
 ## Context
 

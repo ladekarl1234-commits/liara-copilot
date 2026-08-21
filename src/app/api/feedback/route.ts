@@ -19,6 +19,11 @@ import { log } from '@/lib/obs/log';
 
 export const dynamic = 'force-dynamic';
 
+// Rotate past 5MB, same cap and same one-previous-generation policy as the
+// sibling gap log (obs/gaps.ts). Without it feedback.jsonl grew without limit
+// on a long-lived instance (EP-ARCH-07).
+const MAX_FEEDBACK_BYTES = 5 * 1024 * 1024;
+
 export async function POST(req: NextRequest) {
   const ip = clientIp(req);
   try {
@@ -29,6 +34,14 @@ export async function POST(req: NextRequest) {
     // and the key must not include anything the client can mint freely
     const rl = consume(ip);
     if (!rl.allowed) {
+      // 429s returned before any other log line left throttling invisible to
+      // operators, including the global spend backstop (EP-OBS-05).
+      log('warn', 'rate_limited', {
+        route: 'feedback',
+        ipHash: hashId(ip),
+        scope: rl.scope,
+        retryAfterSec: rl.retryAfterSec,
+      });
       return NextResponse.json(
         { error: { code: 'rate_limited' } },
         { status: 429, headers: { 'Retry-After': String(rl.retryAfterSec ?? 60) } },
@@ -44,8 +57,11 @@ export async function POST(req: NextRequest) {
 
     const dir = config().RUNTIME_DIR;
     await fs.promises.mkdir(dir, { recursive: true });
+    const file = path.join(dir, 'feedback.jsonl');
+    const size = await fs.promises.stat(file).then((s) => s.size).catch(() => 0);
+    if (size > MAX_FEEDBACK_BYTES) await fs.promises.rename(file, file + '.1').catch(() => {});
     await fs.promises.appendFile(
-      path.join(dir, 'feedback.jsonl'),
+      file,
       JSON.stringify({
         ts: new Date().toISOString(),
         // hashed: the raw session id is a session credential — anyone who can

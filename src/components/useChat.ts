@@ -33,23 +33,40 @@ export const STAGE_FA: Record<string, string> = {
   answering: 'آماده‌سازی پاسخ…',
 };
 
+/** End-user copy, one entry per error code. Deliberately says nothing about env
+ *  vars, npm scripts or which vendor is down: a Liara customer cannot act on any
+ *  of that, and being told to run a command in a repo they do not have reads as
+ *  an unfinished internal tool (PRD-05). The operator-facing detail stays in the
+ *  structured log and on /internal. */
+const FA_ERROR: Record<UIErrorCode, string> = {
+  rate_limited: 'تعداد درخواست‌ها زیاد شد؛ چند لحظه دیگر دوباره امتحان کنید.',
+  model_timeout: 'پاسخ‌دهی مدل بیش از حد طول کشید؛ لطفاً دوباره امتحان کنید.',
+  model_unavailable: 'سرویس مدل در دسترس نیست؛ کمی بعد دوباره امتحان کنید.',
+  index_missing: 'دستیار موقتاً در دسترس نیست؛ لطفاً کمی دیگر دوباره تلاش کنید.',
+  invalid_input: 'پیام نامعتبر است؛ متن را کوتاه‌تر یا ساده‌تر بنویسید و دوباره بفرستید.',
+  // only reachable from /api/voice/transcribe, but the table is exhaustive over
+  // ErrorCode so a new server code cannot silently fall through to "خطای داخلی"
+  voice_unavailable: 'تبدیل گفتار به متن در دسترس نیست؛ لطفاً پیام را تایپ کنید.',
+  network: 'ارتباط با سرور برقرار نشد؛ اتصال اینترنت را بررسی و دوباره امتحان کنید.',
+  internal: 'خطای داخلی رخ داد؛ لطفاً دوباره امتحان کنید.',
+};
+
 export function faError(code: UIErrorCode): string {
-  switch (code) {
-    case 'rate_limited':
-      return 'تعداد درخواست‌ها زیاد شد؛ چند لحظه دیگر دوباره امتحان کنید.';
-    case 'model_timeout':
-      return 'پاسخ‌دهی مدل بیش از حد طول کشید؛ لطفاً دوباره امتحان کنید.';
-    case 'model_unavailable':
-      return 'سرویس مدل در دسترس نیست؛ کمی بعد دوباره امتحان کنید.';
-    case 'index_missing':
-      return 'ایندکس مستندات آماده نیست؛ ابتدا دستور npm run index را اجرا کنید.';
-    case 'invalid_input':
-      return 'پیام نامعتبر است؛ متن را کوتاه‌تر یا ساده‌تر بنویسید و دوباره بفرستید.';
-    case 'network':
-      return 'ارتباط با سرور برقرار نشد؛ اتصال اینترنت را بررسی و دوباره امتحان کنید.';
-    default:
-      return 'خطای داخلی رخ داد؛ لطفاً دوباره امتحان کنید.';
-  }
+  // `code` crosses the wire, so an unrecognised value is reachable despite the type.
+  return FA_ERROR[code] ?? FA_ERROR.internal;
+}
+
+/** Pick the message shown for a server `error` event.
+ *
+ *  MAINT-02 (client half): the client used to discard `ev.message` unconditionally,
+ *  so a new server-side code could only ever render as "خطای داخلی". It is now the
+ *  fallback for codes this table does not know, which removes the lockstep edit.
+ *  Known codes keep the client's copy on purpose — the server's strings for those
+ *  are operator diagnostics (`npm run index`, OPENROUTER_API_KEY), which is exactly
+ *  what PRD-05 says must not reach a customer. Once the server-side i18n table is
+ *  split into user copy + operator detail, this can invert to prefer `ev.message`. */
+export function userError(code: UIErrorCode, serverMessage?: string): string {
+  return FA_ERROR[code] ?? (serverMessage?.trim() || FA_ERROR.internal);
 }
 
 /** Split an SSE buffer into parsed events + unconsumed tail. Malformed lines are skipped. */
@@ -86,7 +103,7 @@ export function applyEvent(m: UIMessage, ev: ChatEvent): UIMessage {
     case 'done':
       return { ...m, serverId: ev.messageId, done: true };
     case 'error':
-      return { ...m, done: true, error: { code: ev.code, message: faError(ev.code) } };
+      return { ...m, done: true, error: { code: ev.code, message: userError(ev.code, ev.message) } };
     default:
       return m;
   }
@@ -94,6 +111,60 @@ export function applyEvent(m: UIMessage, ev: ChatEvent): UIMessage {
 
 let uid = 0;
 const nextId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${++uid}`;
+
+/* ── transcript persistence (PRD-09) ─────────────────────────────────────────
+ * UX-04 was closed by dropping the session-id restore, because restoring the id
+ * alone re-attached 24h of invisible server context (summary, workflow,
+ * hypotheses) to what looked like a blank chat. The other half of that trade was
+ * that any reload silently destroyed the conversation. Both halves are now
+ * persisted together, so visible and hidden state can never diverge.
+ *
+ * sessionStorage, not localStorage: the session id is a credential (sessions.ts)
+ * and the transcript can contain pasted logs, so per-tab lifetime is the right
+ * default — it still survives reload, back/forward and tab restore, which is the
+ * case the finding describes.
+ * ponytail: last 40 turns, JSON, no compression. Move to IndexedDB only if real
+ * transcripts start hitting the ~5MB quota. */
+const STORE_KEY = 'liara.chat.v1';
+const STORE_MAX_MESSAGES = 40;
+/** Mirrors TTL_MS in src/lib/state/sessions.ts: past it the server has already
+ *  dropped its half, so restoring ours would resurrect a dead session id. */
+const STORE_TTL_MS = 24 * 60 * 60 * 1000;
+
+interface Persisted {
+  at: number;
+  sessionId: string | null;
+  messages: UIMessage[];
+}
+
+/** Parse a stored snapshot. Anything malformed, empty or expired restores nothing
+ *  — a corrupt entry must never be able to break the chat on load. */
+export function readPersisted(raw: string | null, now = Date.now()): Persisted | null {
+  if (!raw) return null;
+  try {
+    const p = JSON.parse(raw) as Partial<Persisted>;
+    if (typeof p.at !== 'number' || now - p.at > STORE_TTL_MS) return null;
+    if (!Array.isArray(p.messages) || p.messages.length === 0) return null;
+    return {
+      at: p.at,
+      sessionId: typeof p.sessionId === 'string' ? p.sessionId : null,
+      messages: p.messages,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Serialize a snapshot, or null when there is nothing to keep. */
+export function writePersisted(
+  messages: UIMessage[],
+  sessionId: string | null,
+  now = Date.now(),
+): string | null {
+  if (messages.length === 0) return null;
+  const snapshot: Persisted = { at: now, sessionId, messages: messages.slice(-STORE_MAX_MESSAGES) };
+  return JSON.stringify(snapshot);
+}
 
 export function useChat() {
   const [messages, setMessages] = useState<UIMessage[]>([]);
@@ -107,13 +178,52 @@ export function useChat() {
   const abortRef = useRef<AbortController | null>(null);
   const streamingRef = useRef(false);
 
-  // The transcript is not persisted, so a restored session id would silently apply
-  // 24h of server-side history (summary, workflow, hypotheses) to what looks to the
-  // user like a blank chat. The id therefore lives only in memory, for exactly as
-  // long as the messages it belongs to (UX-04).
-  // ponytail: no history restore; if the transcript is ever persisted, restore the
-  // id alongside it rather than on its own.
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  // Restore transcript + session id together, never one without the other (PRD-09,
+  // UX-04). After mount, not in a useState initializer: reading sessionStorage
+  // during render would desync from the server-rendered empty shell.
+  useEffect(() => {
+    let raw: string | null = null;
+    try {
+      raw = window.sessionStorage.getItem(STORE_KEY);
+    } catch {
+      return; // storage blocked (private mode / cookies off) — start fresh
+    }
+    const p = readPersisted(raw);
+    if (!p) return;
+    sessionRef.current = p.sessionId;
+    setSessionId(p.sessionId);
+    setMessages(p.messages);
+    // so "تلاش دوباره" works on the first turn after a reload
+    for (let i = p.messages.length - 1; i >= 0; i--) {
+      const m = p.messages[i];
+      if (m?.role === 'user') {
+        lastUserRef.current = m.text;
+        break;
+      }
+    }
+  }, []);
+
+  // Persist only while idle: mid-stream the trailing turn is incomplete, and one
+  // write per token would be pure waste. `skipFirstSave` keeps this pass from
+  // clearing storage on mount, before the restore above has been committed.
+  const skipFirstSave = useRef(true);
+  useEffect(() => {
+    if (skipFirstSave.current) {
+      skipFirstSave.current = false;
+      return;
+    }
+    if (status !== 'idle') return;
+    const raw = writePersisted(messages, sessionId);
+    try {
+      if (raw === null) window.sessionStorage.removeItem(STORE_KEY);
+      else window.sessionStorage.setItem(STORE_KEY, raw);
+    } catch {
+      // quota exceeded or storage blocked — persistence is best-effort and must
+      // never take the conversation down with it
+    }
+  }, [messages, status, sessionId]);
 
   const patch = (id: string, fn: (m: UIMessage) => UIMessage) =>
     setMessages((ms) => ms.map((m) => (m.id === id ? fn(m) : m)));

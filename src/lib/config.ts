@@ -135,7 +135,7 @@ export function config(): Config {
   return cached;
 }
 
-/** test hook */
+/** @internal test-only; do not call from app code (EP-MAINT-08). */
 export function resetConfigForTests() {
   cached = null;
 }

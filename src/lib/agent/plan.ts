@@ -259,6 +259,23 @@ export function preClassify(message: string): DeterministicSignals {
   };
 }
 
+/**
+ * EP-AGT-10: a product topic switch used to leave the OLD platform in the
+ * session forever. `applyPatch` already treats "this message names a different
+ * product" as a topic switch and drops knownError / troubleshooting / workflow
+ * on it (sessions.ts), but never `context.platform` — so after "برنامه Next.js
+ * دارم" → "قیمت object storage چنده؟" the user saw an inert `nextjs` chip they
+ * had no way to remove, and `platform=nextjs` kept going into the answer
+ * prompt's state block on an unrelated question.
+ *
+ * Fires only under the same condition that already counts as a switch: the
+ * message carries its OWN non-PaaS product, different from the session's, and
+ * names no platform of its own (a message that does name one just overwrites it).
+ */
+function platformIsStale(product: string | undefined, platform: string | undefined, state: SessionState): boolean {
+  return Boolean(!platform && product && product !== 'paas' && product !== state.context.product && state.context.platform);
+}
+
 export function fallbackPlan(message: string, s: DeterministicSignals, state: SessionState): AgentPlan {
   // inherit session platform only when this message has no topic of its own
   const ownTopic = s.database ?? (s.product && s.product !== 'paas' ? s.product : undefined);
@@ -289,6 +306,7 @@ export function fallbackPlan(message: string, s: DeterministicSignals, state: Se
   // already the new one and must not be cleared after the merge
   if (s.negatedPlatform && !s.platform) clearContext.push('platform');
   if (s.negatedDatabase && !s.database) clearContext.push('database');
+  if (!clearContext.includes('platform') && platformIsStale(s.product, s.platform, state)) clearContext.push('platform');
 
   // Deterministically seed the agentic state so Fix AND Guide are visible even
   // in keyless mode (no model to author it). Ranked hypotheses come from the
@@ -509,6 +527,14 @@ export async function makePlan(
     }
     // a check the user reports having done is worth keeping even when the model
     // forgot to record it — it is the anti-repetition signal (EP-AGT-09)
+    // Same stale-platform rule as fallbackPlan (EP-AGT-10): the planning model
+    // is not asked to retire context, so a topic switch it recognised (new
+    // product) still left the old platform pinned to the session.
+    const effProduct = plan.statePatch.context?.product ?? signals.product;
+    const effPlatform = plan.statePatch.context?.platform ?? signals.platform;
+    if (!plan.statePatch.clearContext?.includes('platform') && platformIsStale(effProduct, effPlatform, state)) {
+      plan.statePatch.clearContext = [...(plan.statePatch.clearContext ?? []), 'platform'];
+    }
     if (signals.triedAction && !plan.statePatch.context?.triedActions?.length) {
       plan.statePatch.context = { ...plan.statePatch.context, triedActions: [signals.triedAction] } as SessionState['context'];
     }

@@ -95,7 +95,8 @@ multilingual embedding model (`scripts/benchmark-retrieval-modes.ts`, D11):
 hybrid+rerank measurably beats lexical (hit@1 62.5% vs 43.8%, MRR 0.719 vs
 0.601).
 
-**Superseded 2026-08-21 (EP-PRD-02):** shipping the weakest benchmarked mode was
+**Superseded 2026-08-21 by [ADR 0008](adr/0008-hybrid-by-default-local-embeddings.md)
+(EP-PRD-02):** shipping the weakest benchmarked mode was
 itself a finding. `AI_EMBEDDINGS_MODEL` now defaults to `local:` — an in-process
 multilingual e5 model that needs no API key — so **hybrid+rerank is the shipped
 default**. Setting the variable to an empty string restores lexical-only for
@@ -139,9 +140,23 @@ citations rendered with the same [n] the answer text uses (scanned outside
 code fences); 48KB base64 blobs stripped at ingest and the chunk cap made
 absolute; CSP added; SSE heartbeat added; ratelimiter clock-step clamp.
 
-**AC9 amended** from hit@5 ≥ 0.8 to ≥ 0.6 (raw single-query lexical-only lower
-bound, enforced as a failing floor) — 0.8 remains the target for the rewritten/
-hybrid path. Recorded honestly rather than met by weakening the eval.
+**Retrieval acceptance threshold amended** from hit@5 ≥ 0.8 to ≥ 0.6 (raw
+single-query lexical-only lower bound, enforced as a failing floor) — recorded
+honestly rather than met by weakening the eval.
+
+This amendment was originally written against **`AC9`**, an id from the
+first-round `specs/spec.md`. That file is now marked HISTORICAL and its numbering
+no longer exists in the declared source of truth, which made the single most
+consequential recorded spec change unverifiable (`EP-DOCS-09`). The criterion it
+amends is **`AC-RAG-003`** in `/spec.md` §20, and that is where the enforced
+threshold now lives.
+
+Since then the floor stopped being a hand-typed constant at all: it is **derived
+from `evals/baseline.json`** (accepted value minus one case of slack) by
+`floorsFrom()` in `scripts/evaluate.ts`, so it tracks the accepted number by
+construction and moving it requires a visible diff of the baseline file
+(`EP-DATA-03`). Against the accepted hit@5 of 0.854, the derived floor is
+materially above the 0.6 this paragraph negotiated.
 
 ## D10 — MockLiaraProvider is deliberately NOT wired into answers
 
@@ -166,7 +181,9 @@ from the interface by design.
 - **Secret redaction** added before external inference (`redactSecrets`), applied
   to the plan call, captured error context, answer prompt, and dev trace.
 - **Root `spec.md`** created as the mandated source of truth (with AC-* ids);
-  the older `specs/spec.md` is retained as historical.
+  the older `specs/spec.md` is retained as historical and now carries a
+  HISTORICAL banner pointing at it, so the two AC numbering schemes cannot be
+  mistaken for each other (`EP-DOCS-09`).
 - **`/internal` diagnostics page** added (dev-gated) — index status, provider/
   model usage, retrieval eval, live search traces — separate from the public UI.
 - **Docs added:** `docs/adr/0001–0007`, `docs/STACK-EVALUATION.md`,

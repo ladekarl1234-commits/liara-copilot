@@ -26,7 +26,17 @@ export class ClientAbortError extends Error {
   }
 }
 
-const RETRYABLE = new Set([429, 500, 502, 503, 504]);
+const RETRYABLE = new Set([500, 502, 503, 504]);
+/**
+ * 429 is NOT in RETRYABLE: a rate limit is the provider telling us to send
+ * less, and replaying it on the normal backoff multiplies the request rate
+ * against a provider that is already shedding load — the classic retry storm,
+ * arriving exactly when capacity matters (EP-SCALE-07). It gets at most ONE
+ * retry, and only after the interval the provider asked for.
+ */
+const MAX_RATE_LIMIT_RETRIES = 1;
+/** ceiling on an honored Retry-After; longer than this is not worth a held worker */
+const MAX_RETRY_AFTER_MS = 60_000;
 /** don't start another attempt with less than this left on the call budget */
 const MIN_ATTEMPT_MS = 1_000;
 /** undici surfaces transport faults as TypeError; the cause carries the syscall */
@@ -93,6 +103,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const cfg = config();
     const deadline = Date.now() + cfg.MODEL_CALL_BUDGET_MS;
     let lastErr: unknown;
+    let rateLimitRetries = 0;
     for (let attempt = 0; attempt <= cfg.MODEL_MAX_RETRIES; attempt++) {
       const remaining = deadline - Date.now();
       if (remaining < MIN_ATTEMPT_MS) break; // budget spent — stop retrying (REL-02)
@@ -114,6 +125,16 @@ export class OpenAICompatibleProvider implements ModelProvider {
           return { res, abort: (reason: DOMException) => ac.abort(reason) };
         }
         const backoff = 250 * 4 ** attempt;
+        // one retry for 429, waiting the interval the provider named (EP-SCALE-07)
+        if (res.status === 429 && rateLimitRetries < MAX_RATE_LIMIT_RETRIES && attempt < cfg.MODEL_MAX_RETRIES) {
+          const wait = retryAfterMs(res.headers.get('retry-after')) ?? backoff;
+          if (deadline - Date.now() > wait + MIN_ATTEMPT_MS) {
+            rateLimitRetries++;
+            await res.text().catch(() => {}); // drain body — return connection to the pool
+            await sleep(wait);
+            continue;
+          }
+        }
         if (RETRYABLE.has(res.status) && attempt < cfg.MODEL_MAX_RETRIES && deadline - Date.now() > backoff + MIN_ATTEMPT_MS) {
           await res.text().catch(() => {}); // drain body — return connection to the pool
           await sleep(backoff);
@@ -269,6 +290,15 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** Retry-After, in either RFC 7231 spelling (delta-seconds or HTTP date), clamped. */
+export function retryAfterMs(header: string | null): number | undefined {
+  if (!header) return undefined;
+  const trimmed = header.trim();
+  if (/^\d+$/.test(trimmed)) return Math.min(Number(trimmed) * 1000, MAX_RETRY_AFTER_MS);
+  const at = Date.parse(trimmed);
+  return Number.isNaN(at) ? undefined : Math.min(Math.max(at - Date.now(), 0), MAX_RETRY_AFTER_MS);
+}
+
 let providerSingleton: ModelProvider | null = null;
 export function getProvider(): ModelProvider {
   if (!providerSingleton) {
@@ -276,6 +306,7 @@ export function getProvider(): ModelProvider {
   }
   return providerSingleton;
 }
+/** @internal test-only; never call from app code — it swaps the live LLM provider (EP-MAINT-08). */
 export function setProviderForTests(p: ModelProvider | null) {
   providerSingleton = p;
 }

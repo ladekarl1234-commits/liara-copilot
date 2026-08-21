@@ -7,6 +7,7 @@ import {
   parseChatRequest,
   readJsonCapped,
   clientIp,
+  isCrossSiteRequest,
   ValidationError,
   PayloadTooLargeError,
 } from '@/lib/security/validate';
@@ -24,10 +25,34 @@ export async function POST(req: NextRequest): Promise<Response> {
   const requestId = crypto.randomUUID();
   const ip = clientIp(req);
 
+  // A cross-origin fetch with a CORS-simple content type (text/plain) carrying
+  // a JSON body reaches this handler with no preflight, so a third-party page
+  // can spend the operator's model budget through its own visitors — each with
+  // a different IP, so the per-IP limiter never fires. Same guard the voice and
+  // feedback routes already carry (EP-SEC-04); chat is the costlier target.
+  if (isCrossSiteRequest(req)) {
+    return NextResponse.json(
+      { error: { code: 'forbidden', message: 'cross-site request rejected' } },
+      { status: 403 },
+    );
+  }
+
   // Rate limit BEFORE reading the body — the key is the client IP only.
   // (A client-minted sessionId must never grant a fresh bucket.)
   const rl = consume(ip);
   if (!rl.allowed) {
+    // Throttling was previously invisible: the 429 returns before the
+    // orchestrator runs, so neither chat_request nor request_metrics was ever
+    // emitted and an operator saw traffic drop with no server-side evidence
+    // (EP-OBS-05). scope distinguishes one noisy client from the global
+    // spend backstop, which 429s all traffic.
+    log('warn', 'rate_limited', {
+      requestId,
+      route: 'chat',
+      ipHash: hashId(ip),
+      scope: rl.scope,
+      retryAfterSec: rl.retryAfterSec,
+    });
     return NextResponse.json(
       { error: { code: 'rate_limited', message: 'rate limit exceeded' } },
       { status: 429, headers: { 'retry-after': String(rl.retryAfterSec ?? 30) } },

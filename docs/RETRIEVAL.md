@@ -42,11 +42,19 @@ Anchors on docs.liara.ir are authored ids (`<Section id="..."
 title="...">` in the sibling `src/pages/**/*.mdx`), not slugified headings —
 the generated `.md` files don't carry them. `loadAnchors()` parses the
 sibling MDX, matches `normalizeFa(title)` → `id`, and `chunkMarkdown()`
-attaches the anchor to any chunk whose heading text matches. When no MDX
-sibling exists, or the heading has no authored id, the chunk cites the page
-URL without an anchor. Measured coverage from the last build
-(`data/index/meta.json`): **36.6%** of chunks carry a deep anchor (1,370 of
-3,746, from 1,142 source files).
+attaches the anchor to any chunk whose heading text matches. Measured coverage
+from the last build (`data/index/meta.json`): **36.6%** of chunks carry an
+authored deep anchor (1,370 of 3,746, from 1,142 source files).
+
+When no MDX sibling exists, or the heading has no authored id, `citationUrl()`
+falls back to a `#:~:text=` **text fragment** built from the chunk's first prose
+sentence, which scrolls to and highlights that sentence on the live page; a
+browser that does not support the syntax simply ignores it, so the link is never
+worse than the bare URL it replaces. Over the built index that gives **36.6%
+anchored + 57.4% text-fragment = 93.9% deep-linked**, leaving **6.1%** of chunks
+(no usable prose line — pure code, tables or lists) citing the page top.
+`tests/docs-numbers.test.ts` re-measures both figures from the built index, so
+they cannot silently drift (`EP-PRD-06` / `EP-RET-09` / `EP-DOCS-10`).
 
 ## Persian normalization + tokenization (`src/lib/text/persian.ts`)
 
@@ -83,16 +91,20 @@ heading: 2}`, `fuzzy: 0.15`, `prefix: true`.
 
 ## Optional embeddings + incremental hash cache
 
-Vector search is off unless `AI_EMBEDDINGS_MODEL` and a configured provider
-are set (D8: lexical-first, hybrid only when explicitly enabled).
+Vector search is **on by default**: `AI_EMBEDDINGS_MODEL` defaults to
+`local:Xenova/multilingual-e5-small`, which runs in-process and needs no
+provider (ADR 0008, superseding the lexical-first default of D8 / ADR 0004).
+A provider-hosted model still requires a configured provider; an empty string is
+the lexical-only opt-out.
 `scripts/build-index.ts` embeds only chunks whose `hash` isn't already in
 `data/index/embeddings.json` (loaded from the previous build if the model
 name matches), batches of 64, and prunes vectors for hashes no longer present
 in the corpus. Vectors are L2-normalized at build time so query-time
 similarity is a plain dot product (`vectorTopK` in `src/lib/retrieval/index.ts`).
-**As shipped, `embeddedCount: 0`** — the committed index and eval were built
-without an embeddings model configured; hybrid retrieval is implemented but
-unmeasured (see `docs/EVALUATION.md`).
+**As shipped, `embeddedCount: 3744` of `chunkCount: 3746`** — the committed eval
+run (`evals/results/retrieval-2026-08-21-84c1c71.json`, `index` block) was
+measured in exactly that configuration. Hybrid is implemented, shipped **and**
+measured: hit@1 60.4%, hit@5 85.4%, MRR 0.719 (see `docs/EVALUATION.md`).
 
 ## EN→FA bounded query expansion (`expandQueries`)
 
@@ -177,8 +189,38 @@ downstream — see `docs/EVALUATION.md` for the full analysis.
 ## Citation mapping
 
 `citationUrl(chunk)` (`src/lib/retrieval/index.ts`): appends `#anchor` with a
-guaranteed trailing slash before it when the chunk has one; returns the bare
-page URL otherwise. The orchestrator maps only the `[n]` reference numbers
+guaranteed trailing slash before it when the chunk has one; otherwise a
+`#:~:text=` fragment on the chunk's first prose sentence, and only a bare page
+URL when the chunk has no prose to quote. The orchestrator maps only the `[n]` reference numbers
 the model actually used in its answer text back to citations
 (`citationsFromAnswer`); if the model cited nothing explicitly, the top 3
 evidence chunks are shown as a fallback. Citations are deduplicated by URL.
+
+## Known weakness: symptom-shaped questions with no identifier
+
+The one query shape this retriever is worst at is the archetypal support ticket:
+a vague symptom in colloquial Persian carrying **no** product name, error code or
+identifier. Probed against the shipped `search()` on 2026-08-21 (hybrid+rerank,
+`docsCommit 31f2ef7`):
+
+| Query | Confidence | Top pages |
+|---|---|---|
+| `برنامه‌ام بعد از دیپلوی کرش می‌کند و لاگ خالی است` | `low` | `paas/details/health-check`, `paas/details/zero-downtime-deployment`, Hono / Gin deploy guides |
+| `اپم بالا نمیاد و هیچ لاگی نمیده` | `low` | `ai/ai-sdk-core/generating-text`, Chatwoot / WordPress quick-starts |
+
+Only the first hit of the first query is arguably on-topic; the rest is noise, and
+both gate `low` so the product refuses rather than guessing — correct, but it
+refuses the ticket it most exists to absorb. The vector half does not rescue this:
+there is no page in the corpus *about* "my app crashed with no logs", so there is
+nothing semantically near to retrieve.
+
+The eval set understates this, because its `error-log` cases all quote a real
+error string (`error-log` now scores 2/3 hit@1). What is missing is
+**identifier-free symptom phrasings**, which no case covers.
+
+Fix, not yet done (`EP-PRD-10`, open): a small curated symptom→doc-section map
+(crash-loop, empty logs, port binding, build OOM, 502, healthcheck failure — a few
+dozen entries) consulted alongside BM25, plus symptom-phrased cases added to
+`evals/cases` so the improvement is measurable rather than asserted. Both are code
+and eval-data changes; this section exists so the gap is documented rather than
+discovered by a user.

@@ -61,7 +61,18 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (isCrossSiteRequest(req)) return err('forbidden', 'cross-site request rejected', 403);
 
   const rl = consume(ip, VOICE_RATE_COST);
-  if (!rl.allowed) return err('rate_limited', 'rate limit exceeded', 429);
+  if (!rl.allowed) {
+    // the most expensive route to be throttled on, and it was the quietest:
+    // a 429 here produced no log line at all (EP-OBS-05)
+    log('warn', 'rate_limited', {
+      requestId,
+      route: 'voice',
+      ipHash: hashId(ip),
+      scope: rl.scope,
+      retryAfterSec: rl.retryAfterSec,
+    });
+    return err('rate_limited', 'rate limit exceeded', 429);
+  }
 
   const stt = getSttProvider();
   if (!stt) return err('voice_unavailable', 'voice input is not configured on the server', 503);

@@ -3,14 +3,14 @@
 Live status of all 170 findings from [the expert panel review](EXPERT-PANEL-2026-08.md).
 Generated from the panel evidence file plus the remediation ledger — not hand-counted.
 
-**74 fixed · 12 partial · 3 blocked · 81 open**
+**100 fixed · 12 partial · 3 blocked · 55 open**
 
 | Severity | Total | ✅ Fixed | 🟡 Partial | ⛔ Blocked | ⬜ Open |
 |---|---:|---:|---:|---:|---:|
 | 🔴 critical | 4 | 3 | 0 | 1 | 0 |
-| 🟠 high | 47 | 38 | 3 | 2 | 4 |
-| 🟡 medium | 83 | 27 | 5 | 0 | 51 |
-| ⚪ low | 36 | 6 | 4 | 0 | 26 |
+| 🟠 high | 47 | 40 | 3 | 2 | 2 |
+| 🟡 medium | 83 | 41 | 5 | 0 | 37 |
+| ⚪ low | 36 | 16 | 4 | 0 | 16 |
 
 ## Blocked (cannot be closed in this environment)
 
@@ -45,7 +45,7 @@ Generated from the panel evidence file plus the remediation ledger — not hand-
 | `EP-COST-02` | 🟠 | ✅ fixed | FAQ answer cache is eligible for ~5% of turns — the zero-call path almost never fires |
 | `EP-COST-03` | 🟠 | ✅ fixed | fast/smart routing is a no-op by default and inverted in practice: ~95% of answers route 'smart' |
 | `EP-DATA-01` | 🟠 | ✅ fixed | No held-out split: the ranker's boosts were fitted on the same 48 cases the score is reported on |
-| `EP-DATA-02` | 🟠 | ⬜ open | docs/EVALUATION.md publishes five numbers that contradict the committed results artifact |
+| `EP-DATA-02` | 🟠 | ✅ fixed | docs/EVALUATION.md publishes five numbers that contradict the committed results artifact |
 | `EP-DATA-03` | 🟠 | ✅ fixed | Regression floors sit 15-17pp below measured — a 7-case hit@5 drop passes CI |
 | `EP-DATA-04` | 🟠 | ✅ fixed | Eval results are not reproducible: no commit/corpus provenance, unpinned docs, same-day overwrite |
 | `EP-DATA-05` | 🟠 | ✅ fixed | "hit@5" is measured after evidence selection, so k is not 5 for 27 of 48 cases |
@@ -53,7 +53,7 @@ Generated from the panel evidence file plus the remediation ledger — not hand-
 | `EP-DOCS-01` | 🟠 | ✅ fixed | SECURITY.md documents two controls as the pre-fix, vulnerable versions that DECISIONS.md D9 says were replaced |
 | `EP-DOCS-02` | 🟠 | ✅ fixed | docs/EVALUATION.md dataset section is stale on five separate facts and contradicts its own metrics table |
 | `EP-MAINT-01` | 🟠 | ✅ fixed | No linter, no formatter, no quality gate — four eslint-disable directives target a linter that is not installed |
-| `EP-MAINT-02` | 🟠 | ⬜ open | Bilingual strings scattered across five files in three patterns; the fa/en error table is duplicated and the client already discards the server's localized message |
+| `EP-MAINT-02` | 🟠 | ✅ fixed | Bilingual strings scattered across five files in three patterns; the fa/en error table is duplicated and the client already discards the server's localized message |
 | `EP-OBS-01` | 🟠 | ✅ fixed | User feedback is unjoinable to any request signal — thumbs-down cannot be traced to a pipeline run |
 | `EP-OBS-02` | 🟠 | ✅ fixed | Planner fallback is computed as a diagnostic then thrown away — silent quality collapse |
 | `EP-OBS-03` | 🟠 | ✅ fixed | Claim verification has no operational signal, and its failure mode inverts the metric |
@@ -86,18 +86,18 @@ Generated from the panel evidence file plus the remediation ledger — not hand-
 | `EP-AGT-07` | 🟡 | ✅ fixed | No deterministic resolution — a Fix flow has no termination condition without the model |
 | `EP-AGT-08` | 🟡 | ⬜ open | The agentic claims are never measured end-to-end: the eval harness is strictly single-turn |
 | `EP-AGT-09` | 🟡 | ✅ fixed | triedActions is declared, bounded, prompt-fed — and never populated by any deterministic path |
-| `EP-AGT-10` | 🟡 | ⬜ open | Inferred context is not correctable through the UI, and a stale platform survives a product topic switch |
-| `EP-ANS-05` | 🟡 | ⬜ open | The gate is blind to the vector signal, so it refuses exactly the semantic matches vector retrieval exists to catch |
+| `EP-AGT-10` | 🟡 | ✅ fixed | Inferred context is not correctable through the UI, and a stale platform survives a product topic switch |
+| `EP-ANS-05` | 🟡 | ✅ fixed | The gate is blind to the vector signal, so it refuses exactly the semantic matches vector retrieval exists to catch |
 | `EP-ANS-06` | 🟡 | ⬜ open | Citations silently fall back to the top 3 evidence chunks when the answer contains no [n] markers |
 | `EP-ANS-07` | 🟡 | ⬜ open | Claim verification has no tests, no success metric, and degrades to a silent no-op |
 | `EP-ARCH-02` | 🟡 | ⬜ open | ADR 0004 claims the local-embeddings seam "is ready"; it is unreachable from the runtime |
 | `EP-ARCH-03` | 🟡 | ⬜ open | `loadIndex(indexDir)` silently ignores its argument whenever the global cache is warm |
 | `EP-ARCH-04` | 🟡 | ⬜ open | No linter is installed, yet the code carries four `eslint-disable` directives |
 | `EP-ARCH-05` | 🟡 | ⬜ open | `LiaraProvider` + `MockLiaraProvider` are 166 lines of speculative abstraction with zero runtime consumers |
-| `EP-ARCH-06` | 🟡 | ⬜ open | `TextToSpeechProvider` has zero implementations, and two source comments claim otherwise |
-| `EP-ARCH-07` | 🟡 | ⬜ open | Feedback persistence is inline in the route and, unlike its sibling gap log, has no size bound |
+| `EP-ARCH-06` | 🟡 | ✅ fixed | `TextToSpeechProvider` has zero implementations, and two source comments claim otherwise |
+| `EP-ARCH-07` | 🟡 | ✅ fixed | Feedback persistence is inline in the route and, unlike its sibling gap log, has no size bound |
 | `EP-COST-04` | 🟡 | ✅ fixed | estimateTokens' 2.2 chars/token constant is unvalidated and wrong by 1.2-1.6x depending on the served model — Routing split landed; the full saving depends on operator model config. |
-| `EP-COST-05` | 🟡 | ⬜ open | Evidence budget (8 chunks / 7,000 chars) is oversized relative to measured retrieval recall |
+| `EP-COST-05` | 🟡 | ✅ fixed | Evidence budget (8 chunks / 7,000 chars) is oversized relative to measured retrieval recall |
 | `EP-COST-06` | 🟡 | ⬜ open | Cost observability produces no actual number: estimatedCostUsd is undefined by default and nothing aggregates |
 | `EP-COST-07` | 🟡 | ⬜ open | Stream cancellation only logs — an abandoned turn keeps generating and still pays for verify |
 | `EP-COST-08` | 🟡 | ✅ fixed | 30s model timeout runs from request start across the whole stream — long answers are paid for and thrown away |
@@ -110,24 +110,24 @@ Generated from the panel evidence file plus the remediation ledger — not hand-
 | `EP-DATA-12` | 🟡 | ⬜ open | Feedback→gaps loop records a fabricated language and no question text, making it unusable as analytics |
 | `EP-DOCS-03` | 🟡 | ✅ fixed | The "Known failure cases" table overstates failures by 67% and misses one real failure |
 | `EP-DOCS-04` | 🟡 | ✅ fixed | docs/DESIGN.md contradicts itself and the shipped UI after the D12 redesign was appended rather than merged |
-| `EP-DOCS-05` | 🟡 | ⬜ open | spec.md's 21 AC-* acceptance criteria have almost no traceability to evidence |
+| `EP-DOCS-05` | 🟡 | ✅ fixed | spec.md's 21 AC-* acceptance criteria have almost no traceability to evidence |
 | `EP-DOCS-06` | 🟡 | ✅ fixed | RETRIEVAL.md and COST.md quote a superseded chunk count and anchor coverage while citing the live meta.json |
 | `EP-MAINT-03` | 🟡 | ⬜ open | ~200 LOC of speculative scaffolding with zero production callers, contradicting the codebase's own stated discipline |
 | `EP-MAINT-04` | 🟡 | ⬜ open | search() is a ~150-line, ~35-decision-point function doing six separable jobs |
 | `EP-MAINT-05` | 🟡 | ⬜ open | handleChatMessage() is a 236-line function with eight early-return paths and a 40-line trailing closure |
 | `EP-MAINT-06` | 🟡 | ⬜ open | Dev-only critical advisory chain from an unmaintained embeddings library |
-| `EP-OBS-05` | 🟡 | ⬜ open | Rate-limit rejections are completely unlogged, including the global spend backstop |
+| `EP-OBS-05` | 🟡 | ✅ fixed | Rate-limit rejections are completely unlogged, including the global spend backstop |
 | `EP-OBS-06` | 🟡 | ⬜ open | Zero aggregation anywhere; the gap summary is fetched but never rendered |
 | `EP-OBS-07` | 🟡 | ⬜ open | The only drill-down surface is a 50-entry in-process ring buffer that is off in production and unauthenticated when on |
 | `EP-OBS-08` | 🟡 | ⬜ open | Cost metric is absent by default and cannot attribute spend to the model that actually served |
 | `EP-OBS-09` | 🟡 | ⬜ open | Provider retries, timeouts and upstream status codes are entirely unlogged |
-| `EP-OBS-10` | 🟡 | ⬜ open | /api/diag blocks the event loop with a synchronous read+parse of up to 5MB of gaps.jsonl |
+| `EP-OBS-10` | 🟡 | ✅ fixed | /api/diag blocks the event loop with a synchronous read+parse of up to 5MB of gaps.jsonl |
 | `EP-OBS-11` | 🟡 | ⬜ open | Feedback/gap write path lacks the redaction and hashing the log and trace paths enforce |
-| `EP-PRD-05` | 🟡 | ⬜ open | Developer-only strings leak into end-user copy, breaking the product illusion |
-| `EP-PRD-06` | 🟡 | ⬜ open | Deep-anchor citations — the headline trust differentiator — cover only 37% of the corpus |
-| `EP-PRD-07` | 🟡 | ⬜ open | Corpus scope caps the deflectable ticket volume: no pricing, quota, status or account state |
+| `EP-PRD-05` | 🟡 | ✅ fixed | Developer-only strings leak into end-user copy, breaking the product illusion |
+| `EP-PRD-06` | 🟡 | ✅ fixed | Deep-anchor citations — the headline trust differentiator — cover only 37% of the corpus |
+| `EP-PRD-07` | 🟡 | ✅ fixed | Corpus scope caps the deflectable ticket volume: no pricing, quota, status or account state |
 | `EP-PRD-08` | 🟡 | ⬜ open | No unit economics, and the default model supply chain is not one a cloud vendor can ship on |
-| `EP-PRD-09` | 🟡 | ⬜ open | Conversations do not persist, and a reload leaves invisible server-side context attached |
+| `EP-PRD-09` | 🟡 | ✅ fixed | Conversations do not persist, and a reload leaves invisible server-side context attached |
 | `EP-REL-04` | 🟡 | ⬜ open | No user-facing cancel for an in-flight stream; the only escape destroys the conversation |
 | `EP-REL-05` | 🟡 | ⬜ open | SSE cancel() only logs — client disconnect does not stop in-flight model work |
 | `EP-REL-06` | 🟡 | ⬜ open | Client collapses the server's voice error taxonomy into one generic message |
@@ -142,9 +142,9 @@ Generated from the panel evidence file plus the remediation ledger — not hand-
 | `EP-RET-09` | 🟡 | 🟡 partial | Deep-anchor coverage 36.6% with no fallback — most citations land at the top of the page — Partially addressed. |
 | `EP-RET-10` | 🟡 | ⬜ open | docs/RETRIEVAL.md has drifted from the code on five separate facts |
 | `EP-SCALE-04` | 🟡 | ⬜ open | Whole pipeline is synchronous on one event loop with no offload and no lag metric |
-| `EP-SCALE-05` | 🟡 | ⬜ open | /api/diag re-reads and re-parses the entire gaps.jsonl (up to 5 MB) synchronously on every request |
+| `EP-SCALE-05` | 🟡 | ✅ fixed | /api/diag re-reads and re-parses the entire gaps.jsonl (up to 5 MB) synchronously on every request |
 | `EP-SCALE-06` | 🟡 | ⬜ open | Client re-parses the entire conversation markdown on every streamed token |
-| `EP-SCALE-07` | 🟡 | ⬜ open | No per-request deadline: retries can exceed maxDuration ~2x and amplify load onto a rate-limited provider |
+| `EP-SCALE-07` | 🟡 | ✅ fixed | No per-request deadline: retries can exceed maxDuration ~2x and amplify load onto a rate-limited provider |
 | `EP-SCALE-08` | 🟡 | ⬜ open | Client disconnect does not cancel the in-flight model call |
 | `EP-SCALE-09` | 🟡 | ⬜ open | Embeddings load path parses a ~27 MB JSON into per-chunk arrays before building the Float32Array |
 | `EP-SEC-04` | 🟡 | ✅ fixed | No Origin / Sec-Fetch-Site check on any POST route; the multipart voice endpoint is a CORS-simple request |
@@ -164,29 +164,29 @@ Generated from the panel evidence file plus the remediation ledger — not hand-
 | `EP-AGT-11` | ⚪ | ✅ fixed | Greeting/chitchat detection is anchored-exact, so ordinary pleasantries take the full 2-3 model-call path |
 | `EP-AGT-12` | ⚪ | 🟡 partial | The keyless Fix message lists every hypothesis, contradicting the ONE-next-step rule it is meant to embody — Partially addressed. |
 | `EP-ANS-08` | ⚪ | ⬜ open | docs/EVALUATION.md contradicts its own committed numbers in three places |
-| `EP-ANS-09` | ⚪ | ⬜ open | "Deep-anchor citations" holds for only 36.6% of chunks |
+| `EP-ANS-09` | ⚪ | ✅ fixed | "Deep-anchor citations" holds for only 36.6% of chunks |
 | `EP-ARCH-08` | ⚪ | ⬜ open | `/api/diag` embeds filesystem/eval-discovery logic that belongs in a module |
-| `EP-ARCH-09` | ⚪ | ⬜ open | Seven `*ForTests` hooks exported from production modules; `finish()` re-fetches state it was handed |
+| `EP-ARCH-09` | ⚪ | ✅ fixed | Seven `*ForTests` hooks exported from production modules; `finish()` re-fetches state it was handed |
 | `EP-ARCH-10` | ⚪ | ⬜ open | Dead exports in `local-embeddings.ts` |
 | `EP-COST-10` | ⚪ | ⬜ open | Voice spend is bounded by bytes, not by audio duration, on a per-minute-billed API |
-| `EP-COST-11` | ⚪ | ⬜ open | No spend ceiling beyond requests-per-minute, and no single-flight for concurrent identical questions |
-| `EP-DOCS-07` | ⚪ | ⬜ open | benchmarks/README.md's "Latest" retrieval line cites MRR 0.595, which the committed results file contradicts |
-| `EP-DOCS-08` | ⚪ | ⬜ open | ADR 0004's own "Revisit when" condition has fired, but the ADR was edited in place instead of superseded, against the stated ADR process |
-| `EP-DOCS-09` | ⚪ | ⬜ open | Two competing spec files with two AC numbering schemes; DECISIONS.md cites an AC id that does not exist in the source of truth |
-| `EP-DOCS-10` | ⚪ | ⬜ open | No mechanical guard against doc drift, in a repo whose docs demonstrably drift |
+| `EP-COST-11` | ⚪ | ✅ fixed | No spend ceiling beyond requests-per-minute, and no single-flight for concurrent identical questions |
+| `EP-DOCS-07` | ⚪ | ✅ fixed | benchmarks/README.md's "Latest" retrieval line cites MRR 0.595, which the committed results file contradicts |
+| `EP-DOCS-08` | ⚪ | ✅ fixed | ADR 0004's own "Revisit when" condition has fired, but the ADR was edited in place instead of superseded, against the stated ADR process |
+| `EP-DOCS-09` | ⚪ | ✅ fixed | Two competing spec files with two AC numbering schemes; DECISIONS.md cites an AC id that does not exist in the source of truth |
+| `EP-DOCS-10` | ⚪ | ✅ fixed | No mechanical guard against doc drift, in a repo whose docs demonstrably drift |
 | `EP-MAINT-07` | ⚪ | ⬜ open | Bounded-map eviction idiom hand-rolled three times, once with an unnamed magic 5000 that shadows a named constant |
 | `EP-MAINT-08` | ⚪ | ⬜ open | Five test-only reset hooks exported from production modules with nothing preventing production use |
-| `EP-MAINT-09` | ⚪ | ⬜ open | Test output is drowned in structured JSON logs, making real failures hard to locate |
+| `EP-MAINT-09` | ⚪ | ✅ fixed | Test output is drowned in structured JSON logs, making real failures hard to locate |
 | `EP-MAINT-10` | ⚪ | ⬜ open | Two styling systems in one component: 1062-line hand-written globals.css alongside stray Tailwind utilities and inline styles |
 | `EP-MAINT-11` | ⚪ | ⬜ open | Twenty-two issue IDs referenced in code comments resolve only by grepping eight undocumented review directories |
 | `EP-OBS-12` | ⚪ | ⬜ open | Feedback-driven gap rows are keyed on a random UUID, so 100% of them are unaggregatable noise |
 | `EP-PRD-10` | ⚪ | ⬜ open | The archetypal triage query — vague crash, empty logs — retrieves irrelevant pages |
-| `EP-PRD-11` | ⚪ | ⬜ open | Landing promise overshoots the delivered behaviour |
+| `EP-PRD-11` | ⚪ | ✅ fixed | Landing promise overshoots the delivered behaviour |
 | `EP-REL-10` | ⚪ | ✅ fixed | Non-network exceptions are retried as network failures and reported as model_unavailable |
 | `EP-REL-11` | ⚪ | ⬜ open | Index load has an unguarded read and non-atomic writes, so a corrupt index reports 'internal' instead of index_missing |
 | `EP-REL-12` | ⚪ | ⬜ open | Concurrent requests on one session share a single mutable SessionState |
 | `EP-RET-11` | ⚪ | 🟡 partial | headingPath and contentType are computed and stored but never used at retrieval time; h2 breadcrumb is unsearchable — Measured and rejected: indexing `headingPath` as a 4th field cost 3 cases (hit@5 0.813→0.750), so it was deliberately not adopted. |
-| `EP-RET-12` | ⚪ | ⬜ open | The 'high' confidence tier fires on ~5% of cases, leaving the fast-model route and FAQ cache nearly dead |
+| `EP-RET-12` | ⚪ | ✅ fixed | The 'high' confidence tier fires on ~5% of cases, leaving the fast-model route and FAQ cache nearly dead |
 | `EP-SCALE-10` | ⚪ | ⬜ open | Rate-limit map sweep is O(n) per request once the map passes 10k keys and may free nothing |
 | `EP-SCALE-11` | ⚪ | ⬜ open | Index loads lazily inside the first request instead of at process start |
 | `EP-SCALE-12` | ⚪ | ⬜ open | Runtime JSONL files on local disk contradict the stateless-process claim |

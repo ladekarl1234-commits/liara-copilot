@@ -16,6 +16,15 @@ interface Bucket {
   last: number; // ms timestamp of last refill
 }
 
+export interface RateLimitResult {
+  allowed: boolean;
+  retryAfterSec?: number;
+  /** Which layer rejected. The global backstop firing 429s *everyone*, so it is
+   * a site-wide availability event and must be distinguishable from one noisy
+   * client in the log stream (EP-OBS-05). Absent when the request was allowed. */
+  scope?: 'per_ip' | 'global';
+}
+
 const GLOBAL_FACTOR = 10;
 const buckets = new Map<string, Bucket>();
 let globalBucket: Bucket | null = null;
@@ -36,7 +45,7 @@ function take(b: Bucket, capacity: number, now: number, cost: number): { allowed
  * 2-character chat message and an 8 MB paid transcription that holds a server
  * slot for 40 s must not cost the limiter the same (EP-SEC-08).
  */
-export function consume(key: string, cost = 1): { allowed: boolean; retryAfterSec?: number } {
+export function consume(key: string, cost = 1): RateLimitResult {
   const capacity = config().RATE_LIMIT_RPM;
   // a cost above capacity would make the route permanently 429 on a small RPM
   const weight = Math.max(1, Math.min(cost, capacity));
@@ -57,11 +66,11 @@ export function consume(key: string, cost = 1): { allowed: boolean; retryAfterSe
     buckets.set(key, b);
   }
   const perKey = take(b, capacity, now, weight);
-  if (!perKey.allowed) return perKey;
+  if (!perKey.allowed) return { ...perKey, scope: 'per_ip' };
 
   if (!globalBucket) globalBucket = { tokens: capacity * GLOBAL_FACTOR, last: now };
   const g = take(globalBucket, capacity * GLOBAL_FACTOR, now, weight);
-  return g.allowed ? perKey : g;
+  return g.allowed ? perKey : { ...g, scope: 'global' };
 }
 
 export function resetForTests(): void {

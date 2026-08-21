@@ -20,13 +20,15 @@ Ask a question, paste an error, or speak — get a grounded answer with citation
 
 A single, calm chat surface — *"ask Liara anything"* — that automatically infers what you need:
 
-- **Ask** — grounded answers with deep-anchor citations (`docs.liara.ir/...#section`).
+- **Ask** — grounded answers that cite the *paragraph*, not the page (`docs.liara.ir/...#section`).
 - **Fix** — support-engineer troubleshooting: diagnose → one next test → adapt (not 14 causes at once).
 - **Guide** — a stateful multi-step checklist (e.g. deploy Django + PostgreSQL).
 
 The interaction is deliberately simple. The engineering underneath is not.
 
 > **High internal sophistication, near-zero external complexity.**
+
+**What it deliberately cannot answer.** The corpus is the 11 product sections of `docs.liara.ir` (`paas`, `ai`, `one-click-apps`, `dbaas`, `iaas`, `email-server`, `references`, `object-storage`, `mirrors`, `dns-management-system`, `overview`) — there is **no pricing/plans page, no status or changelog feed, and no account API**. So "what does plan X cost", "is there an incident right now" and "why is *my* app down" are structurally out of reach and get an honest refusal rather than a guess. That is correct behaviour, and it is also the ceiling: the deflectable share of real support volume here is *doc-answerable questions only*, not all tickets (`EP-PRD-07`). Closing that gap means ingesting pricing/status as first-class sources and putting a `RealLiaraProvider` behind the existing seam — the roadmap below, in that order.
 
 ## 🏗 Architecture
 
@@ -55,6 +57,8 @@ Modular monolith, one deployable container. Full rationale in [`docs/adr/`](docs
 
 Official Liara docs (`liara-cloud/docs`, `public/llms/**`) → structural chunking (commands stay attached to their explanation, metadata preserved) → **hybrid** lexical BM25 + optional cosine vectors fused by **Reciprocal Rank Fusion** → metadata filter + boosts → **evidence gate**. Persian normalization (ی/ي, ک/ك, ZWNJ, digit folding) and synonym folding are applied *identically* at index and query time. Exact identifiers (`DATABASE_URL`, `502`, `CNAME`) are why retrieval is hybrid, not vector-only. Details: [`docs/RETRIEVAL.md`](docs/RETRIEVAL.md).
 
+**Citation depth, measured — not claimed.** Only **36.6%** of chunks carry an authored `<Section id=…>` anchor (`anchorCoverage` in the committed eval artifact), so "deep-anchor citations" was never true of most of the corpus (`EP-PRD-06` / `EP-RET-09`). Chunks without one now cite a `#:~:text=` fragment that scrolls to and highlights the sentence the answer came from. Over the built index that is **36.6% anchored + 57.4% text-fragment = 93.9% deep-linked**; the remaining **6.1%** have no usable prose line and land at the top of the page. Both figures are re-measured from the built index on every CI run (`tests/docs-numbers.test.ts`), not transcribed once.
+
 ## 🎙 Voice
 
 Press mic → speak → stop → see transcript → send. STT is **Soniox** (server-side key, native Persian); TTS is the browser's `SpeechSynthesis` behind an opt-in **🔊 Listen**. Both sit behind provider abstractions (`SpeechToTextProvider` / `TextToSpeechProvider`). Mic states — `idle · requesting · listening · processing · transcribed · error` — are explicit, and a mic failure never discards typed text. Details: [`docs/VOICE.md`](docs/VOICE.md) · rationale: [ADR 0006](docs/adr/0006-voice-architecture.md).
@@ -67,9 +71,9 @@ Measured, reproducible — **no fabricated numbers**.
 
 | Metric | hit@1 | hit@3 | hit@5 | MRR | Gate accuracy | False-refusal |
 |---|---:|---:|---:|---:|---:|---:|
-| Value | **60.4%** | 79.2% | **85.4%** | **0.719** | 0.923 | **6.3%** |
+| Value | **60.4%** | 85.4% | **85.4%** | **0.719** | 13/13 (1.000) | **6.3%** |
 
-hit@5 carries a 95% CI of [0.728, 0.928] — at n=48 that width is honest and reported. Refusal-recall is **1.000** (every question the docs cannot answer is refused) and balanced accuracy **0.969**. CI enforces floors *and* a false-refusal ceiling via exit code, so a regression fails the run. Reproduce: `npm run benchmark:retrieval`.
+hit@5 carries a 95% CI of [0.728, 0.928] — at n=48 that width is honest and reported. Refusal-recall is **11/11** (every question the docs cannot answer is refused) and balanced accuracy **0.969**. Gate accuracy alone is one-sided — a system that refused everything would also score 13/13 — so the false-refusal rate is published beside it. CI enforces floors *and* that false-refusal ceiling via exit code, so a regression fails the run. Reproduce: `npm run benchmark:retrieval`.
 
 **Retrieval modes** — all five strategies on the 48 sourced cases, driven through the shipped `search()` with a **local** multilingual embedding model (`Xenova/multilingual-e5-small`, 384-d, no API key):
 
@@ -81,9 +85,9 @@ hit@5 carries a 95% CI of [0.728, 0.928] — at n=48 that width is honest and re
 | Hybrid (RRF) | 58.3% | 77.1% | 83.3% | 75.3% | 0.689 | 46 ms |
 | **Hybrid + rerank** ← shipped | **62.5%** | **83.3%** | **85.4%** | **77.4%** | **0.719** | 44 ms |
 
-The signals are complementary and rerank adds a further gain, so the strongest measured mode is the one that ships. **Honesty note:** the benchmark runs McNemar tests between modes and at n=48 the *hit@5* differences are **not** statistically distinguishable (p ≥ 0.63) — the hit@1/MRR separation is the meaningful result, and a larger eval set is the documented next step. Numbers are model-specific. Evidence: [`benchmarks/retrieval/`](benchmarks/retrieval/) · reproduce: `npm run benchmark:retrieval-modes`.
+The signals are complementary and rerank adds a further gain, so the strongest measured mode is the one that ships. **Honesty note:** the benchmark runs McNemar tests between modes and at n=48 the *hit@5* differences are **not** statistically distinguishable (p ≥ 0.62) — the hit@1/MRR separation is the meaningful result (lexical → hybrid+rerank on hit@1: p = 0.0039), and a larger eval set is the documented next step. Numbers are model-specific. Evidence: [`benchmarks/retrieval/`](benchmarks/retrieval/) · reproduce: `npm run benchmark:retrieval-modes`.
 
-**Tests:** `370 passed / 32 files` (`npm test`) · `npm run lint` clean (0 errors, 0 warnings) · typecheck clean · `npm run build` clean · `npm audit --omit=dev` **0 production vulnerabilities** (the local-embedding + lint tooling pulls dev-only advisories that never ship).
+**Tests:** `451 passed / 38 files` (`npm test`) · `npm run lint` clean (0 errors, 0 warnings) · typecheck clean · `npm run build` clean · `npm audit --omit=dev` **0 production vulnerabilities** (the local-embedding + lint tooling pulls dev-only advisories that never ship).
 
 ## 🧑‍⚖️ Independent expert review
 
@@ -105,7 +109,7 @@ The panel's consensus: **engineering discipline outruns proven outcomes.** The s
 
 ### Remediation — what has been fixed since
 
-**74 of 170 findings are closed** (plus 12 partial), including **3 of the 4 criticals** and **38 of the 47 highs** — each with a regression test. Live status for every finding: [`EXPERT-PANEL-STATUS.md`](docs/reviews/EXPERT-PANEL-STATUS.md).
+**100 of 170 findings are closed** (plus 12 partial), including **3 of the 4 criticals** and **40 of the 47 highs** — each with a regression test. Live status for every finding: [`EXPERT-PANEL-STATUS.md`](docs/reviews/EXPERT-PANEL-STATUS.md).
 
 | Finding | Was | Now |
 |---|---|---|
@@ -116,7 +120,7 @@ The panel's consensus: **engineering discipline outruns proven outcomes.** The s
 | `EP-MAINT-01` 🟠 no quality gate | no linter at all | `npm run lint` clean, 0 warnings |
 | `EP-SCALE-03` 🟠 benchmark measured a cheaper pipeline | 232 ms fiction | honest **cold 385 ms / cached 40 ms** |
 
-Test suite grew **192 → 370**. The one critical left open is `EP-PRD-01` — end-to-end answer quality has still never been measured, because that requires a real OpenRouter key this repo does not have. It is documented, not hidden.
+Test suite grew **192 → 451**. The one critical left open is `EP-PRD-01` — end-to-end answer quality has still never been measured, because that requires a real OpenRouter key this repo does not have. It is documented, not hidden.
 
 Nothing is hidden: the **full record**, including every score with its reasoning, all 170 issues with evidence and recommended fixes, and the overall assessment, is published in-repo.
 
@@ -164,9 +168,9 @@ Runs **keyless** too (grounded source listings, Fix/Guide visible, zero model ca
 | Command | What |
 |---|---|
 | `npm run dev` / `build` / `start` | develop / production build / serve |
-| `npm test` · `npm run typecheck` | 192 tests · strict TS |
+| `npm test` · `npm run typecheck` · `npm run lint` | full suite (count above) · strict TS · 0 warnings |
 | `npm run index` (`docs:sync` + `build-index`) | sync docs + build index (incremental, hash-based) |
-| `npm run benchmark:retrieval` | retrieval eval (lexical) → `evals/results/` |
+| `npm run benchmark:retrieval` | retrieval eval, shipped config → `evals/results/` |
 | `npm run benchmark:retrieval-modes` | lexical vs vector vs hybrid vs hybrid+rerank (local embeddings) → `benchmarks/retrieval/` |
 | `npm run benchmark:load` | mock-LLM HTTP load test → `benchmarks/load/` |
 
@@ -186,8 +190,8 @@ src/
     state/ obs/   sessions, logs, traces, gaps
     liara/        LiaraProvider seam + MockLiaraProvider (future API)
 docs/             ARCHITECTURE, RETRIEVAL, EVALUATION, SECURITY, COST, DESIGN, VOICE, DEPLOYMENT, STACK-EVALUATION, adr/
-evals/            fixed datasets + measured results
-benchmarks/       load-test evidence (JSON)
+evals/            fixed datasets, measured results, accepted CI baseline
+benchmarks/       retrieval-mode + mock-LLM load evidence (JSON)
 ```
 
 ## 🗺 Roadmap (next phases)
