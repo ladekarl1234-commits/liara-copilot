@@ -56,6 +56,29 @@ function isTransportError(e: unknown): boolean {
   return TRANSPORT.test(`${e.message} ${causeText}`);
 }
 
+/**
+ * The model half of a request body: the primary slug, the gateway-side fallback
+ * chain, and the reasoning switch.
+ *
+ * `models` is OpenRouter's server-side fallback list — it walks the array on
+ * 429/5xx without a second round-trip from us, which is the only reliable way
+ * to survive free-tier slugs that rate-limit without warning. The primary is
+ * de-duplicated out of the tail so an operator who pins AI_MODEL_FAST to one of
+ * the fallbacks does not send it twice.
+ *
+ * `reasoning:{enabled:false}` is not a micro-optimization. Several of the
+ * models on this tier are reasoning models that spend the entire completion
+ * budget thinking and then return `content: null` — measured, and the reason
+ * generateStream now refuses to finish empty.
+ */
+function modelSelection(model: string, cfg: ReturnType<typeof config>): Record<string, unknown> {
+  const body: Record<string, unknown> = { model };
+  const chain = cfg.modelFallbacks.filter((m) => m !== model);
+  if (chain.length) body.models = [model, ...chain];
+  if (!cfg.reasoning) body.reasoning = { enabled: false };
+  return body;
+}
+
 function isAbortLike(e: unknown): e is DOMException {
   return e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError');
 }
@@ -99,9 +122,10 @@ export class OpenAICompatibleProvider implements ModelProvider {
     body: object,
     signal?: AbortSignal,
     streaming = false,
+    budgetMs?: number,
   ): Promise<{ res: Response; abort: (reason: DOMException) => void }> {
     const cfg = config();
-    const deadline = Date.now() + cfg.MODEL_CALL_BUDGET_MS;
+    const deadline = Date.now() + (budgetMs ?? cfg.MODEL_CALL_BUDGET_MS);
     let lastErr: unknown;
     let rateLimitRetries = 0;
     for (let attempt = 0; attempt <= cfg.MODEL_MAX_RETRIES; attempt++) {
@@ -172,7 +196,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   async generate(opts: GenerateOptions): Promise<GenerateResult> {
     const body: Record<string, unknown> = {
-      model: opts.model,
+      ...modelSelection(opts.model, config()),
       messages: opts.messages,
       max_tokens: opts.maxTokens ?? 1400,
       temperature: opts.temperature ?? 0.2,
@@ -180,7 +204,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     };
     // most-compatible structured output: json_object + schema in prompt (caller validates with zod)
     if (opts.jsonSchema) body.response_format = { type: 'json_object' };
-    const { res } = await this.post('/chat/completions', body, opts.signal);
+    const { res } = await this.post('/chat/completions', body, opts.signal, false, opts.budgetMs);
     // the attempt timer still covers this body read; without this the abort
     // escapes as a raw DOMException and is mislabelled 'internal' (REL-03)
     const data = await res.json().catch((e: unknown) => {
@@ -195,15 +219,15 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   async *generateStream(opts: GenerateOptions): AsyncIterable<string> {
+    const cfg = config();
     const body = {
-      model: opts.model,
+      ...modelSelection(opts.model, cfg),
       messages: opts.messages,
       max_tokens: opts.maxTokens ?? 1400,
       temperature: opts.temperature ?? 0.2,
       stream: true,
     };
-    const cfg = config();
-    const { res, abort } = await this.post('/chat/completions', body, opts.signal, true);
+    const { res, abort } = await this.post('/chat/completions', body, opts.signal, true, opts.budgetMs);
     if (!res.body) throw new ModelError('model_unavailable', 'no response body');
     const reader = res.body.getReader();
     // Two independent bounds on the body (REL-03/COST-08): an idle gap — no
@@ -223,6 +247,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       const decoder = new TextDecoder();
       let buf = '';
       let metaSent = false;
+      let yielded = 0;
       armIdle();
       while (true) {
         const { done, value } = await reader.read();
@@ -245,11 +270,24 @@ export class OpenAICompatibleProvider implements ModelProvider {
               opts.onMeta?.({ model: parsed.model }); // actual model (openrouter/free routes dynamically)
             }
             const delta = parsed.choices?.[0]?.delta?.content;
-            if (delta) yield delta;
+            if (delta) {
+              yielded += delta.length;
+              yield delta;
+            }
           } catch {
             // partial/keepalive line — ignore
           }
         }
+      }
+      // A stream that ends having produced no content at all is a provider
+      // failure, not an answer. Reasoning models on this tier can spend the
+      // whole completion budget in `delta.reasoning` and close with
+      // `content: null` — measured. Without this the orchestrator streamed
+      // nothing, attached no citations, skipped verification and rendered an
+      // empty answer bubble. Raising here routes it into the existing
+      // model-failure path, which serves the sources-only degraded payload.
+      if (yielded === 0) {
+        throw new ModelError('model_unavailable', 'provider stream produced no content');
       }
     } catch (e) {
       // an abort DURING the body used to escape as a raw DOMException (post()

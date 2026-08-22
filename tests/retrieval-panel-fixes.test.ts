@@ -250,8 +250,20 @@ describe('EP-RET-01: one embedder, one passage template', () => {
     expect(passageText(c)).toBe('شبکه خصوصی\nشبکه خصوصی › راه‌اندازی\nمتن');
   });
 
-  it('refuses to mix vector spaces: embeddings built with another model fail loudly', () => {
+  it('refuses to mix vector spaces: vectors built with another model fail loudly', () => {
+    // Shipped vector artifact is now vectors.json (header: model/dims/count/ids)
+    // + vectors.bin (raw little-endian Float32, rows in `ids` order) — NOT
+    // embeddings.json, which is only the incremental build cache and is never
+    // read by loadIndex(). See scripts/build-index.ts / loadIndex()'s vectors
+    // block in src/lib/retrieval/index.ts.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'liara-emb-'));
+    const dims = 2;
+    const writeVectors = (model: string, floats: number[]) => {
+      fs.writeFileSync(path.join(dir, 'vectors.json'), JSON.stringify({ model, dims, count: 1, ids: ['a'] }));
+      const buf = Buffer.alloc(floats.length * Float32Array.BYTES_PER_ELEMENT);
+      floats.forEach((f, i) => buf.writeFloatLE(f, i * 4));
+      fs.writeFileSync(path.join(dir, 'vectors.bin'), buf);
+    };
     try {
       const c = { ...chunk({ id: 'a' }), hash: 'h1' };
       const mini = new MiniSearch(miniOptions());
@@ -259,7 +271,7 @@ describe('EP-RET-01: one embedder, one passage template', () => {
       fs.writeFileSync(path.join(dir, 'chunks.json'), JSON.stringify([c]));
       fs.writeFileSync(path.join(dir, 'lexical.json'), JSON.stringify(mini));
       fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify({ builtAt: 't', chunkCount: 1, anchorCoverage: 0, lexicalVersion: LEXICAL_VERSION }));
-      fs.writeFileSync(path.join(dir, 'embeddings.json'), JSON.stringify({ model: 'local:other', dims: 2, vectors: { h1: [1, 0] } }));
+      writeVectors('local:other', [1, 0]);
 
       resetIndexForTests();
       // UPDATED for the new default (EP-PRD-02): hybrid is now ON unless
@@ -281,6 +293,12 @@ describe('EP-RET-01: one embedder, one passage template', () => {
       process.env.AI_EMBEDDINGS_MODEL = 'local:other';
       resetConfigForTests();
       expect(loadIndex(dir).vectors?.ids).toEqual(['a']);
+
+      // a corrupt/truncated binary (line-ending mangling, partial write) must
+      // also fail loudly rather than silently mis-reading the matrix
+      resetIndexForTests();
+      fs.writeFileSync(path.join(dir, 'vectors.bin'), Buffer.alloc(4)); // declares 1x2 floats (8 bytes), ships 4
+      expect(() => loadIndex(dir)).toThrow(/vectors\.bin is 4 bytes but vectors\.json declares 1x2/);
     } finally {
       delete process.env.AI_EMBEDDINGS_MODEL;
       resetIndexForTests();

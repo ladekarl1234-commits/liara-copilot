@@ -1,0 +1,12 @@
+console.log('a');
+const ort = await import('onnxruntime-web');
+console.log('b ort imported', ort.default ? Object.keys(ort.default).slice(0,5) : Object.keys(ort).slice(0,5));
+const O = ort.default ?? ort;
+O.env.wasm.numThreads = 1;
+console.log('c set threads, wasmPaths=', O.env.wasm.wasmPaths);
+import fs from 'node:fs';
+const buf = fs.readFileSync('.cache/transformers/Xenova/multilingual-e5-small/onnx/model_quantized.onnx');
+console.log('d model bytes', buf.length);
+const t=Date.now();
+const s = await O.InferenceSession.create(buf, { executionProviders:['wasm'] });
+console.log('e session ms', Date.now()-t, s.inputNames);

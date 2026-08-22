@@ -17,7 +17,20 @@ import { log } from '@/lib/obs/log';
 import { hashId } from '@/lib/security/hash';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+/**
+ * 60s, not 120s: it is the Vercel Hobby ceiling (a larger value is rejected at
+ * build time) and it is well above the measured turn cost on the pinned model
+ * — plan ~1.6s + answer ~1-4s + verify ~1-2s.
+ *
+ * The number only means anything alongside TURN_BUDGET_MS below. Previously the
+ * pipeline's own composed budget reached ~225s against a 120s route, so the
+ * platform killed the invocation mid-stream and the app never learned: no error
+ * event, no metrics row, no trace. The app must always give up first.
+ */
+export const maxDuration = 60;
+
+/** Hard deadline for one turn, kept under maxDuration so WE time out, not the platform. */
+const TURN_BUDGET_MS = 50_000;
 
 const HEARTBEAT_MS = 15_000;
 
@@ -59,7 +72,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  let body: { sessionId?: string; message: string };
+  let body: { sessionId?: string; message: string; state?: string };
   try {
     // byte cap enforced on the actual stream, not the advisory header
     body = parseChatRequest(await readJsonCapped(req, config().MAX_BODY_BYTES));
@@ -86,6 +99,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   });
 
   const encoder = new TextEncoder();
+  // Aborted by cancel() when the client disconnects. req.signal is the platform's
+  // own disconnect channel, but it is not wired everywhere; cancel() on the
+  // ReadableStream always fires, and until now it only wrote a log line while the
+  // model kept generating — and kept being paid for — for a reader that had gone.
+  const disconnected = new AbortController();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false;
@@ -104,9 +122,10 @@ export async function POST(req: NextRequest): Promise<Response> {
         await handleChatMessage({
           message: body.message,
           sessionId: body.sessionId,
+          stateToken: body.state,
           requestId,
           emit,
-          signal: req.signal,
+          signal: AbortSignal.any([req.signal, disconnected.signal, AbortSignal.timeout(TURN_BUDGET_MS)]),
         });
       } catch (e) {
         // orchestrator handles its own errors; this is the last-resort net
@@ -125,6 +144,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     cancel() {
       // reliable disconnect signal even if the platform does not wire req.signal
       log('info', 'chat_stream_cancelled', { requestId });
+      // ...and actually STOP. The orchestrator, the provider fetch and any
+      // in-flight retry all hang off this signal, so aborting here ends model
+      // spend for a reader that is already gone (AC-C6).
+      disconnected.abort();
     },
   });
 

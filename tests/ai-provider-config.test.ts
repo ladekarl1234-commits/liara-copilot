@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { config, resetConfigForTests } from '@/lib/config';
+import { config, resetConfigForTests, DEFAULT_CHAT_MODEL } from '@/lib/config';
 import { MockLLMProvider } from '@/lib/ai/mock-provider';
 
 const KEYS = ['OPENROUTER_API_KEY', 'OPENROUTER_MODEL', 'AI_BASE_URL', 'AI_API_KEY', 'AI_MODEL_FAST', 'AI_MODEL_SMART', 'LLM_MOCK', 'SONIOX_API_KEY'];
@@ -19,8 +19,17 @@ describe('provider resolution (config)', () => {
     expect(c.providerName).toBe('openrouter');
     expect(c.aiConfigured).toBe(true);
     expect(c.aiBaseUrl).toBe('https://openrouter.ai/api/v1');
-    expect(c.fastModel).toBe('openrouter/free');
-    expect(c.smartModel).toBe('openrouter/free'); // defaults to fast
+    // NOT 'openrouter/free'. That alias routes dynamically and was measured
+    // landing on nvidia/nemotron-3.5-content-safety — a safety CLASSIFIER that
+    // answers "Say OK" with "User Safety: safe" — on 2 of 6 samples.
+    expect(c.fastModel).toBe(DEFAULT_CHAT_MODEL);
+    expect(c.smartModel).toBe(DEFAULT_CHAT_MODEL); // defaults to fast
+    expect(c.fastModel).not.toBe('openrouter/free');
+    // a free slug can 429 without warning, so the gateway needs somewhere to go
+    expect(c.modelFallbacks.length).toBeGreaterThan(0);
+    expect(c.modelFallbacks).not.toContain(c.fastModel);
+    // reasoning tokens are pure latency and spend for grounded RAG
+    expect(c.reasoning).toBe(false);
   });
 
   it('honors OPENROUTER_MODEL as the model default', () => {

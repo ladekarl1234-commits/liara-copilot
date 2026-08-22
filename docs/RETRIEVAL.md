@@ -43,14 +43,14 @@ title="...">` in the sibling `src/pages/**/*.mdx`), not slugified headings —
 the generated `.md` files don't carry them. `loadAnchors()` parses the
 sibling MDX, matches `normalizeFa(title)` → `id`, and `chunkMarkdown()`
 attaches the anchor to any chunk whose heading text matches. Measured coverage
-from the last build (`data/index/meta.json`): **36.6%** of chunks carry an
-authored deep anchor (1,370 of 3,746, from 1,142 source files).
+from the last build (`data/index/meta.json`): **36.5%** of chunks carry an
+authored deep anchor (1,368 of 3,750, from 1,143 source files).
 
 When no MDX sibling exists, or the heading has no authored id, `citationUrl()`
 falls back to a `#:~:text=` **text fragment** built from the chunk's first prose
 sentence, which scrolls to and highlights that sentence on the live page; a
 browser that does not support the syntax simply ignores it, so the link is never
-worse than the bare URL it replaces. Over the built index that gives **36.6%
+worse than the bare URL it replaces. Over the built index that gives **36.5%
 anchored + 57.4% text-fragment = 93.9% deep-linked**, leaving **6.1%** of chunks
 (no usable prose line — pure code, tables or lists) citing the page top.
 `tests/docs-numbers.test.ts` re-measures both figures from the built index, so
@@ -83,7 +83,7 @@ question collapse to one key.
 
 `miniOptions()` (`src/lib/retrieval/index.ts`): fields `title`, `heading`,
 `text`; `tokenize: tokenizeFa`; `processTerm` is a no-op (normalization
-already happened in the tokenizer, not a second time). `LEXICAL_VERSION = 2`
+already happened in the tokenizer, not a second time). `LEXICAL_VERSION = 4`
 is stamped into `meta.json` at build time and checked at load time — an index
 built with an older tokenizer/options shape throws `IndexMissingError`
 instead of silently mis-scoring. Search-time options: `boost: {title: 3,
@@ -119,17 +119,39 @@ still reaches the Persian-dominant corpus without a model call.
 ## RRF fusion + deterministic boosts
 
 Every expanded lexical query list, and every vector-search list (when
-enabled), contributes ranks combined by Reciprocal Rank Fusion
-(`RRF_K = 60`, `score += 1/(60+rank)`), up to 40 candidates per query. Fused
-scores then get deterministic multiplicative boosts:
+enabled), is combined by Reciprocal Rank Fusion (`RRF_K = 10`,
+`score += 1/(10+rank)`), up to 40 candidates per query — see the constant's
+comment in `src/lib/retrieval/index.ts` for why 10, not the textbook 60, is
+the measured-correct value here.
+
+Each modality is fused WITHIN itself first — one RRF sum over however many
+lexical lists ran (the original queries plus `expandQueries`' synthetic
+EN→FA variant), and a separate RRF sum over however many vector lists ran —
+and only THEN combined, each divided by its own list count and multiplied by
+an explicit weight (`LEXICAL_WEIGHT = VECTOR_WEIGHT = 1`). This is
+deliberate: `expandQueries` adds its extra list to roughly half of English/
+mixed-language queries but the vector side always embeds exactly `qs` (never
+the expansion), so summing every list from both modalities into one shared
+RRF map — the original implementation — silently gave English queries a
+~1.5:1 lexical-over-vector weighting nobody chose. Normalizing by each
+modality's own list count before combining removes that accident without
+changing the RRF-within-a-modality behavior (a doc corroborated across more
+of ITS OWN modality's variants still ranks higher).
+
+Fused scores then get deterministic multiplicative boosts (9, not one round
+number — the last is a smooth per-chunk multiplier, not an if/else):
 
 | Boost | Factor | When |
 |---|---|---|
 | Platform filter match | ×1.25 | `filters.platform` set and chunk matches |
 | Product filter match | ×1.10 | `filters.product` set and chunk matches |
 | Platform named in query text | ×1.20 | chunk's platform token appears in the query itself |
-| Heading/title overlap | ×(1 + min(0.2, 0.05·overlap)) | query tokens present in chunk title/heading |
 | Related-links page | ×0.60 | `sourcePath` ends `related-links.md` — link-hub pages cite everything, answer nothing |
+| No platform named, chunk has one | ×0.85 | platform-less query, chunk is platform-specific — the general page usually answers better |
+| Niche product not referenced | ×0.72 | chunk's product is in `NICHE_PRODUCT_TERMS` and the query names none of its trigger terms |
+| `/about.md` hub page | ×0.85 | broad overview page; a concrete how-to/details page usually answers better |
+| Quick-start/details/references page | ×1.08 | `sourcePath` matches, and the chunk's product is unfiltered or matches `filters.product` (never boosts a foreign product) |
+| Heading/title overlap | ×(1 + min(0.2, 0.05·overlap)) | query tokens present in chunk title/heading |
 
 **Filter fallback**: if a metadata filter leaves fewer than 5 lexical results
 (the plan's guessed product/platform was wrong, or the evidence lives
@@ -146,40 +168,82 @@ match from being padded out with irrelevant filler.
 
 ## Gate thresholds (coverage / score-per-token / margin)
 
-`gateConfidence(resultCount, coverage, scorePerToken, margin)`
-(`src/lib/retrieval/index.ts`), where `coverage = exactCoverage(...)`:
+`gateConfidence(resultCount, coverage, scorePerToken, margin, priorTurns,
+topTitleMatch, converged, idfScale)` (`src/lib/retrieval/index.ts`), where
+`coverage = exactCoverage(...)`:
 
 ```
-low    : no results, or coverage.ratio < 0.34 (with informative>0)
-high   : coverage.ratio >= 0.7 AND coverage.informative >= 2
-         AND scorePerToken >= 25 AND margin >= 1.05
-medium : everything else (incl. informative == 0 — a pure-stopword
-         follow-up, which the planner resolves)
+if resultCount === 0                                   → low
+scoreDensity = scorePerToken / idfScale                 // idfScale = log(corpus chunk count) — see below
+strongEvidence = topTitleMatch AND coverage.matched >= 2
+                 AND coverage.matchedWeight >= 6 (nats) AND scoreDensity >= 40/log(N)
+
+coverage.matched === 0                                  → low (or medium if
+                                                            informative === 0
+                                                            AND priorTurns > 0
+                                                            — a pure-stopword
+                                                            follow-up)
+coverage.ratio < 0.34 AND NOT strongEvidence             → low
+NOT topTitleMatch AND coverage.ratio < 0.5               → low
+topTitleMatch AND converged AND coverage.ratio >= 0.7
+  AND coverage.informative >= 2 AND scoreDensity >= 25/log(N)
+  AND margin >= 1.05                                     → high
+everything else                                          → medium
 ```
 
 - **coverage** (`exactCoverage`) — the fraction of a query's **informative**
   tokens (stopwords removed: fa/en function words + domain-ubiquitous terms
-  like *liara*, *app*) that appear **verbatim** in the top-3 selected chunks.
-  Computed on the **original** queries only — never the synthetic EN→FA
-  expansion, whose short query would otherwise inflate the signal. Fuzzy and
-  prefix matches deliberately do **not** count: they are exactly what let an
-  off-topic query (a cake recipe) reach `medium` before the round-2 rebuild.
-  `informative` is that query's informative-token count (a 1-token match is
-  never enough for `high`).
-- **scorePerToken** — the top result's raw MiniSearch score ÷ unique
-  query-token count (density, not raw magnitude).
+  like *liara*, *app*) that appear **verbatim** in the top-3 selected chunks,
+  **IDF-weighted** when a corpus IDF map is supplied (a rare, page-identifying
+  term outweighs a corpus-ubiquitous one; see `corpusIdf()`). Computed on the
+  **original** queries only — never the synthetic EN→FA expansion, whose short
+  query would otherwise inflate the signal (this now also holds for
+  `bestScorePerToken` below — the loop that builds it only updates on original
+  queries). Fuzzy and prefix matches deliberately do **not** count: they are
+  exactly what let an off-topic query (a cake recipe) reach `medium` before
+  the round-2 rebuild. `informative` is that query's informative-token count
+  (a 1-token match is never enough for `high`).
+- **scorePerToken** — the top lexical result's raw MiniSearch score ÷ unique
+  query-token count (density, not raw magnitude); 0 when lexical search didn't
+  run (vector-only benchmark mode).
 - **margin** — top fused score ÷ second fused score.
+- **scoreDensity** — `scorePerToken` divided by `idfScale`
+  (`corpusIdf().oov`, i.e. `log(corpus chunk count)`), so the two BM25-density
+  bars (`25/log(N)` for `high`, `40/log(N)` for `strongEvidence`) stay
+  meaningful as the corpus grows instead of silently drifting with raw score
+  magnitude.
+- **topTitleMatch** — the top selected chunk's title/heading shares a
+  non-generic informative query token (`headingCarriesQueryToken`); extended
+  to the runner-up chunk when the top two are within RRF noise of each other
+  (`margin < 1.05`), since which one fusion sorted first is then arbitrary.
+- **converged** — the top two selected chunks agree on `product`; `high`
+  requires this so an ambiguous cross-product question (evidence splits
+  between two plausible answers) can't buy the cheap route.
+- **strongEvidence** — an absolute-evidence escape from the `coverage.ratio <
+  0.34` floor: coverage is a ratio over the *question's* vocabulary, so a
+  verbose-but-answerable question can score low on ratio alone. When the top
+  page's title carries a real query term, at least 2 tokens matched with real
+  IDF mass (>= 6 nats), and BM25 density is strong, the question is
+  answerable regardless of how many extra words came with it — but this
+  escape only ever lands at `medium`, never `high`.
 
 `low` blocks answering entirely (the orchestrator emits the honest "couldn't
-find this" message and records a documentation gap). `high` additionally
-routes to the fast model and makes the answer FAQ-cache-eligible —
-deliberately the strictest tier. Thresholds were tuned against `evals/cases`
-via `npm run evaluate:retrieval`; the runner **fails** (`exit 1`) if hit@5
-drops below 0.6 or gate-accuracy below 0.75, and requires
-`unsupported`/`adversarial` cases to gate `low` (not merely "not high" — that
-earlier definition was satisfied by a gate that never fired). Current gate
-accuracy: **7/9**, with the two vocabulary-carrying misses defended
-downstream — see `docs/EVALUATION.md` for the full analysis.
+find this" message and records a documentation gap). `medium` — the
+overwhelming operating mode — routes to the fast model just like `high` does;
+only `low` and reasoning-shaped intents (`troubleshooting`, `workflow`) force
+the smart model (`pickAnswerRoute`, `src/lib/ai/router.ts`). FAQ-cache
+eligibility is `confidence !== 'low'` (any non-refused answer, not just
+`high`) gated additionally on `turns === 0` and a clean verification pass.
+`high` is still the strictest tier for what it DOES require (converged,
+title-matched, dense, real-margin evidence), it just isn't the sole gate for
+model routing or caching. Thresholds were tuned against `evals/cases` via
+`npx tsx scripts/evaluate.ts --retrieval-only`; the runner fails CI when any
+of hit@1, hit@5, MRR, evidence-recall, refusal-recall or false-refusal-rate
+drops below a floor **derived** from `evals/baseline.json` (measured value
+minus one case of slack — never hand-typed), or when the run's
+`retrievalMode` doesn't match the baseline's (a silent hybrid→lexical
+regression would otherwise pass every ratio-based floor — see
+`floorsFrom`/`scripts/evaluate.ts`).
 
 > **Round-2 note.** The first gate counted fuzzy/prefix stopword matches and
 > thresholded on a corpus-scale-dependent raw BM25 score; adversarial review

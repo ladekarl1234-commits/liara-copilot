@@ -1,0 +1,7 @@
+# vectors.bin is a raw little-endian Float32 matrix. Any line-ending conversion
+# corrupts it silently — 0x0A bytes inside a float would become 0x0D0A on a
+# Windows checkout and the matrix would be both wrong and the wrong length.
+# loadIndex() does check byteLength against count*dims, so it would fail loudly
+# rather than serve nonsense, but the deploy would simply be broken.
+*.bin binary
+data/index/*.json -text

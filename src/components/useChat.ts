@@ -134,6 +134,10 @@ const STORE_TTL_MS = 24 * 60 * 60 * 1000;
 interface Persisted {
   at: number;
   sessionId: string | null;
+  /** Signed conversation state from the server; echoed back so a follow-up
+   *  resumes even when it lands on a different serverless instance. Opaque and
+   *  unreadable to us — the server rejects anything it did not sign. */
+  state: string | null;
   messages: UIMessage[];
 }
 
@@ -148,6 +152,7 @@ export function readPersisted(raw: string | null, now = Date.now()): Persisted |
     return {
       at: p.at,
       sessionId: typeof p.sessionId === 'string' ? p.sessionId : null,
+      state: typeof p.state === 'string' ? p.state : null,
       messages: p.messages,
     };
   } catch {
@@ -159,10 +164,11 @@ export function readPersisted(raw: string | null, now = Date.now()): Persisted |
 export function writePersisted(
   messages: UIMessage[],
   sessionId: string | null,
+  state: string | null = null,
   now = Date.now(),
 ): string | null {
   if (messages.length === 0) return null;
-  const snapshot: Persisted = { at: now, sessionId, messages: messages.slice(-STORE_MAX_MESSAGES) };
+  const snapshot: Persisted = { at: now, sessionId, state, messages: messages.slice(-STORE_MAX_MESSAGES) };
   return JSON.stringify(snapshot);
 }
 
@@ -172,6 +178,9 @@ export function useChat() {
   const [stage, setStage] = useState<string | null>(null);
   const [contextChips, setContextChips] = useState<string[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // Not state: it changes once per turn and nothing renders from it, so a ref
+  // keeps it out of the render path while staying readable by the next send().
+  const stateRef = useRef<string | null>(null);
 
   const sessionRef = useRef<string | null>(null);
   const lastUserRef = useRef('');
@@ -193,6 +202,7 @@ export function useChat() {
     const p = readPersisted(raw);
     if (!p) return;
     sessionRef.current = p.sessionId;
+    stateRef.current = p.state;
     setSessionId(p.sessionId);
     setMessages(p.messages);
     // so "تلاش دوباره" works on the first turn after a reload
@@ -215,7 +225,7 @@ export function useChat() {
       return;
     }
     if (status !== 'idle') return;
-    const raw = writePersisted(messages, sessionId);
+    const raw = writePersisted(messages, sessionId, stateRef.current);
     try {
       if (raw === null) window.sessionStorage.removeItem(STORE_KEY);
       else window.sessionStorage.setItem(STORE_KEY, raw);
@@ -254,6 +264,7 @@ export function useChat() {
       switch (ev.type) {
         case 'session':
           sessionRef.current = ev.sessionId;
+          if (ev.state) stateRef.current = ev.state;
           setSessionId(ev.sessionId);
           break;
         case 'stage':
@@ -273,7 +284,11 @@ export function useChat() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionId: sessionRef.current ?? undefined, message: text }),
+        body: JSON.stringify({
+          sessionId: sessionRef.current ?? undefined,
+          state: stateRef.current ?? undefined,
+          message: text,
+        }),
         signal: ac.signal,
       });
 
@@ -351,6 +366,9 @@ export function useChat() {
     abortRef.current?.abort();
     streamingRef.current = false;
     sessionRef.current = null;
+    // must be cleared with the id, or "new conversation" would hand the server
+    // the previous conversation's summary and profile under a fresh id
+    stateRef.current = null;
     lastUserRef.current = '';
     setSessionId(null);
     setMessages([]);

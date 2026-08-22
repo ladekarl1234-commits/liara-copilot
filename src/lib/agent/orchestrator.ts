@@ -10,17 +10,18 @@
 // — every branch below calls it exactly once. Purely structural: no branch's
 // observable behavior changed (see tests/orchestrator*.test.ts).
 
-import type { ChatEvent, Citation, Intent, ModelProvider, RetrievalResult, ScoredChunk, SessionState, TurnOutcome, Usage } from '@/types';
+import type { AgentPlan, ChatEvent, Citation, Intent, ModelProvider, RetrievalFilters, RetrievalResult, ScoredChunk, SessionState, TurnOutcome, Usage } from '@/types';
 import { config } from '@/lib/config';
 import { search, loadIndex, citationUrl, IndexMissingError } from '@/lib/retrieval/index';
 import { queryEmbedder } from '@/lib/retrieval/embed';
 import { normalizedKey, detectLanguage } from '@/lib/text/persian';
 import { getProvider, ModelError, ClientAbortError } from '@/lib/ai/provider';
 import { pickAnswerRoute, estimateCostUsd, addUsage, estimateTokens } from '@/lib/ai/router';
-import { makePlan } from '@/lib/agent/plan';
+import { makePlan, fallbackPlan, preClassify } from '@/lib/agent/plan';
 import { verifyAnswer } from '@/lib/agent/verify';
 import { answerSystemPrompt, CANNED, sanitizeFences } from '@/lib/agent/prompts';
 import { getOrCreateSession, applyPatch, pushTurn, contextChips, save } from '@/lib/state/sessions';
+import { packSession } from '@/lib/state/portable';
 import { log, logMetrics } from '@/lib/obs/log';
 import { recordTrace } from '@/lib/obs/trace';
 import { recordGap } from '@/lib/obs/gaps';
@@ -70,6 +71,8 @@ function setLastAction(sessionId: string, action: string): void {
 export interface ChatTurnInput {
   message: string;
   sessionId?: string;
+  /** HMAC-signed conversation state the client carried back (lib/state/portable). */
+  stateToken?: string;
   requestId: string;
   emit: (e: ChatEvent) => void;
   signal?: AbortSignal;
@@ -89,14 +92,18 @@ interface TurnMetrics {
   // 'model' | 'fallback' | 'none' — silent planner degradation was otherwise
   // invisible (EP-OBS-02); 'none' = no model call attempted at all (keyless / greeting).
   planRoute: 'model' | 'fallback' | 'none';
+  // Did the speculative retrieval started alongside the planner get reused?
+  // 'miss' is the signal that the deterministic pre-pass and the model plan
+  // disagree often enough that the overlap is buying nothing.
+  speculativeRetrieval?: 'hit' | 'miss';
   verified?: boolean; // whether claim verification actually ran (EP-OBS-03)
   unsupportedClaims?: number;
 }
 
-export async function handleChatMessage({ message, sessionId, requestId, emit, signal }: ChatTurnInput): Promise<void> {
+export async function handleChatMessage({ message, sessionId, stateToken, requestId, emit, signal }: ChatTurnInput): Promise<void> {
   const t0 = Date.now();
   const cfg = config();
-  const session = getOrCreateSession(sessionId);
+  const session = getOrCreateSession(sessionId, stateToken);
   emit({ type: 'session', sessionId: session.id });
 
   const m: TurnMetrics = {
@@ -247,6 +254,24 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
     const modelSafe = redactSecrets(sanitizeFences(message));
 
     emit({ type: 'stage', stage: 'understanding' });
+
+    // Retrieval used to start only AFTER the planner's round-trip returned, so
+    // a turn paid plan + retrieval + answer serially. With the embedding model
+    // now behind the provider (~750ms measured) that ordering costs about a
+    // second of time-to-first-token for nothing: the deterministic pre-pass
+    // already knows, with no model call at all, what to search for and which
+    // product/platform filters apply.
+    //
+    // So speculate on the deterministic plan concurrently with the model plan.
+    // When the model agrees — the common case for a well-formed question — the
+    // whole retrieval is already done and free. When it disagrees, we run the
+    // real search then, exactly as before: never slower, often ~750ms faster.
+    const embedQuery = queryEmbedder();
+    const deps = { embedQuery, priorTurns: session.turns };
+    const guess = fallbackPlan(modelSafe, preClassify(modelSafe), session);
+    const guessQueries = retrievalQueriesOf(guess, modelSafe);
+    const speculative = search(guessQueries, guess.filters, deps).catch((e: unknown) => e as Error);
+
     const planned = await makePlan(modelSafe, session, provider, signal);
     const plan = planned.plan;
     m.usage = addUsage(m.usage, planned.usage);
@@ -282,18 +307,16 @@ export async function handleChatMessage({ message, sessionId, requestId, emit, s
 
     // --- retrieval ---
     emit({ type: 'stage', stage: 'searching' });
-    // queryEmbedder() reads AI_EMBEDDINGS_MODEL itself and only needs `provider`
-    // for a provider-hosted model — a `local:` model needs no API key at all, so
-    // gating this on `provider` (as before) made local embeddings unreachable
-    // even with no LLM configured (EP-RET-01).
-    const embedQuery = queryEmbedder();
-    const retrieval = await search(
-      // modelSafe (redacted), never the raw message: when embeddings are on this
-      // query is sent to the embeddings provider and stored in the dev trace.
-      plan.retrievalQueries.length ? plan.retrievalQueries : [modelSafe.slice(0, 200)],
-      plan.filters,
-      { embedQuery, priorTurns: session.turns },
-    );
+    // modelSafe (redacted), never the raw message: when embeddings are on, this
+    // query is sent to the embeddings provider and stored in the dev trace.
+    const planQueries = retrievalQueriesOf(plan, modelSafe);
+    const reusable = sameSearch(planQueries, plan.filters, guessQueries, guess.filters);
+    const settled = await speculative;
+    m.speculativeRetrieval = reusable && !(settled instanceof Error) ? 'hit' : 'miss';
+    const retrieval =
+      reusable && !(settled instanceof Error)
+        ? settled
+        : await search(planQueries, plan.filters, deps);
     m.retrieval = retrieval;
 
     emit({ type: 'stage', stage: 'checking' });
@@ -491,6 +514,34 @@ const UNTRIAGED_NOTE = {
 } as const;
 
 /** A ranked-hypotheses Fix message when retrieval is weak but we can still reason from the symptom. */
+/** The queries a plan actually searches with — the same fallback search() gets. */
+function retrievalQueriesOf(p: AgentPlan, message: string): string[] {
+  return p.retrievalQueries.length ? p.retrievalQueries : [message.slice(0, 200)];
+}
+
+/**
+ * Would these two searches return the same thing?
+ *
+ * Deliberately exact on both queries and filters, and order-sensitive: RRF
+ * fuses per-query rank lists, so a reordering is a different result set, and a
+ * filter difference changes which chunks are candidates at all. A false
+ * positive here would silently serve the wrong evidence, which is far worse
+ * than the ~750ms a false negative costs.
+ */
+function sameSearch(
+  aq: string[],
+  af: RetrievalFilters,
+  bq: string[],
+  bf: RetrievalFilters,
+): boolean {
+  const norm = (f: RetrievalFilters) => `${f.product?.trim() ?? ''}|${f.platform?.trim() ?? ''}`;
+  return (
+    norm(af) === norm(bf) &&
+    aq.length === bq.length &&
+    aq.every((q, i) => q === bq[i])
+  );
+}
+
 function fixFramedMessage(t: NonNullable<SessionState['troubleshooting']>, lang: 'fa' | 'en'): string {
   const top = t.hypotheses[0]?.text ?? '';
   const others = t.hypotheses.slice(1).map((h: { text: string }) => `• ${h.text}`).join('\n');
@@ -523,6 +574,13 @@ function emitState(emit: (e: ChatEvent) => void, session: ReturnType<typeof getO
 // holds the object.
 function finish(emit: (e: ChatEvent) => void, s: SessionState, requestId: string, userMsg: string, answer: string) {
   pushTurn(s, userMsg, answer.slice(0, 300));
+  // Hand the finished state back to the client, signed. The next turn may well
+  // land on a different isolate whose Map has never seen this id; with this it
+  // still resumes the same conversation. Emitted here, after pushTurn, so the
+  // token reflects the turn that just completed. null when SESSION_SECRET is
+  // unset — the client simply has nothing to echo and behaviour is unchanged.
+  const state = packSession(s);
+  if (state) emit({ type: 'session', sessionId: s.id, state });
   // messageId === requestId (EP-OBS-01): a minted-and-discarded UUID here had
   // no way back to the request_metrics/trace row that produced it, so a
   // thumbs-down could never be joined to the pipeline run it was about.

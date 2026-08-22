@@ -7,6 +7,7 @@ import type { AgentPlan, ModelProvider, SessionState, Usage } from '@/types';
 import { detectLanguage } from '@/lib/text/persian';
 import { planSystemPrompt } from '@/lib/agent/prompts';
 import { planRoute } from '@/lib/ai/router';
+import { config } from '@/lib/config';
 import { log } from '@/lib/obs/log';
 
 const PlanSchema = z.object({
@@ -471,6 +472,51 @@ function seedTroubleshooting(message: string, _s: DeterministicSignals): Session
  *     IS a quality degradation and must be observable. `reason` says why. */
 export type PlanRoute = 'deterministic' | 'model' | 'fallback';
 
+/**
+ * Is the deterministic pre-pass good enough that the model plan would only
+ * cost latency?
+ *
+ * The planner is the FIRST thing on the critical path, before retrieval and
+ * before any token reaches the user. Measured on the deployed app it costs
+ * 2.5-15.7s — the free tier is slow and its tail is long. So it has to earn
+ * that, and on a first-turn question where the regexes already resolved the
+ * product/platform and the query is the retrieval query, it does not: the
+ * model's job would be to re-derive `intent: question`, the language we
+ * already detected, and filters we already extracted.
+ *
+ * Deliberately NARROW. The model plan is kept for everything where it actually
+ * adds something the regexes cannot:
+ *   - any error report -> the Fix flow needs a hypothesis ledger;
+ *   - any turn after the first -> resolving "and how do I set the port?"
+ *     against the conversation is exactly what a planner is for;
+ *   - an active troubleshooting or workflow flow -> the ledger has to advance;
+ *   - anything the regexes could NOT pin to a product or platform -> that is
+ *     the ambiguity the model is there to resolve;
+ *   - continuation / resolution cues -> flow control.
+ */
+export function skipModelPlan(s: DeterministicSignals, state: SessionState, message: string): boolean {
+  if (state.turns > 0) return false;
+  if (message.length > SKIP_PLAN_MAX_CHARS) return false;
+  if (s.hasError || s.isContinuation || s.isResolved) return false;
+  if (s.negatedPlatform || s.negatedDatabase) return false;
+  if (state.troubleshooting && !state.troubleshooting.resolved) return false;
+  if (state.workflow?.steps.length) return false;
+  // Only a NAMED PLATFORM counts. It is the one high-precision signal here:
+  // PLATFORM_HINTS match literal framework names ("Next.js", "جنگو"), so a hit
+  // is what the user actually said. PRODUCT_HINTS are keyword guesses and are
+  // deliberately NOT enough — "چطور متغیر محیطی و DATABASE_URL تنظیم کنم؟"
+  // matches the `database` hint and resolves to product `dbaas`, when the
+  // question is about environment variables on PaaS. Skipping the planner there
+  // would cement that mis-classification into plan.filters and filter retrieval
+  // to the wrong product, which is a far worse outcome than a slow turn.
+  if (!s.platform) return false;
+  // A long message is long because it carries nuance — a pasted config, several
+  // questions at once, a correction. That is what the planner is for.
+  return true;
+}
+/** Above this many characters a first turn always gets the model planner. */
+const SKIP_PLAN_MAX_CHARS = 180;
+
 export async function makePlan(
   message: string,
   state: SessionState,
@@ -480,6 +526,9 @@ export async function makePlan(
   const signals = preClassify(message);
   const fallback = fallbackPlan(message, signals, state);
   if (!provider || signals.isGreeting) return { plan: fallback, usage: zero(), route: 'deterministic' };
+  if (skipModelPlan(signals, state, message)) {
+    return { plan: fallback, usage: zero(), route: 'deterministic', reason: 'confident-signals' };
+  }
 
   const route = planRoute();
   try {
@@ -492,6 +541,9 @@ export async function makePlan(
       maxTokens: 700,
       temperature: 0,
       jsonSchema: {}, // request json mode
+      // Hard bound: the deterministic plan above is already computed and is a
+      // usable answer, so a slow model plan is worth nothing. See PLAN_BUDGET_MS.
+      budgetMs: config().PLAN_BUDGET_MS,
       signal,
     });
     const raw = extractJson(res.text);
@@ -542,7 +594,12 @@ export async function makePlan(
     return { plan, usage: res.usage, route: 'model' };
   } catch (e) {
     if ((e as Error).name === 'ClientAbortError') throw e; // don't answer a gone client
-    return { plan: fallback, usage: zero(), route: 'fallback', reason: 'model-error' };
+    // Distinguish "the planner was too slow" from "the planner broke": the
+    // first is a latency signal an operator can act on (raise PLAN_BUDGET_MS,
+    // or accept that this provider cannot plan in time), the second is a bug.
+    const code = (e as { code?: string }).code;
+    const reason = code === 'model_timeout' ? 'timeout' : 'model-error';
+    return { plan: fallback, usage: zero(), route: 'fallback', reason };
   }
 }
 

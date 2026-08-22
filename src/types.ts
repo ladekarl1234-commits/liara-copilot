@@ -136,6 +136,10 @@ export interface GenerateOptions {
   maxTokens?: number;
   temperature?: number;
   jsonSchema?: object; // request structured output
+  /** Override MODEL_CALL_BUDGET_MS for this one call, covering every retry and
+   *  backoff. For a call that is on the critical path AND has a usable
+   *  fallback, waiting the global budget is strictly worse than giving up. */
+  budgetMs?: number;
   signal?: AbortSignal;
   /** provider reports the model that actually served the request (openrouter/free
    * is a dynamic router). Called at most once per call, before/at first token. */
@@ -194,7 +198,10 @@ export interface ChatRequest {
 // SSE event stream from /api/chat
 export type ChatEvent =
   | { type: 'stage'; stage: 'understanding' | 'searching' | 'checking' | 'answering' }
-  | { type: 'session'; sessionId: string }
+  // `state` is the signed, portable conversation state. The client stores it and
+  // echoes it on the next turn so a follow-up resumes even when it lands on a
+  // different serverless isolate. Absent when SESSION_SECRET is not configured.
+  | { type: 'session'; sessionId: string; state?: string }
   | { type: 'context'; chips: string[] } // small context indicator
   | { type: 'workflow'; workflow: NonNullable<SessionState['workflow']> }
   | { type: 'troubleshooting'; state: NonNullable<SessionState['troubleshooting']> }

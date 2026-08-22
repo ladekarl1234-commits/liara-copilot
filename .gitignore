@@ -4,10 +4,21 @@ out/
 .env
 .env.local
 data/liara-docs/
-data/index/
+# data/index/ IS tracked: a Vercel build is a git checkout, and without the
+# index in it loadIndex() throws on every request and /api/health returns 503.
+# Building it during `next build` instead would need network to github.com and
+# to the embeddings provider, and would put ~14 minutes of embedding on the
+# critical path of every deploy. Shipping the artifact makes deploys fast and
+# byte-for-byte reproducible.
+# The one file NOT shipped is the incremental build cache:
+data/index/embeddings.json
 data/cache/
 data/runtime/
 *.tsbuildinfo
 .DS_Store
 .playwright-cli/
 .cache/
+.vercel
+
+.vercel
+.env*

@@ -1,4 +1,101 @@
-# Deployment (future — not executed in this phase)
+# Deployment
+
+Two supported targets. **Vercel** is the live deployment; **Docker/Liara** is
+the original target and still builds.
+
+---
+
+## Target A — Vercel (live)
+
+### What makes this deployable at all
+
+The app was written for one long-lived container and took four dependencies
+Vercel does not provide. Each is now closed:
+
+| Assumption | Why it breaks on Vercel | Fix |
+|---|---|---|
+| A 25 MB search index at `data/index/`, gitignored and built by the Dockerfile | A Vercel build is a git checkout; `next build` never ran the indexer, and the tracer cannot see a runtime-computed path. `loadIndex()` threw on every request, `/api/health` → 503 | The index is **committed** (`.gitignore`), and `next.config.mjs` lists its files under `outputFileTracingIncludes['/*']` |
+| A 52 MB embedding model fetched from huggingface.co inside the request | Read-only filesystem, no image build stage to bake a cache into, ~10 s per cold isolate — and a truncated cache **aborts the Node process** (exit 127, uncatchable) | Query embeddings come from the provider (`AI_EMBEDDINGS_MODEL=baai/bge-m3`). The WASM stack is excluded from the function bundle |
+| `mkdir` + `appendFile` under a relative `data/runtime` | Read-only outside `/tmp`; `/api/feedback` returned **HTTP 500** for every thumbs-up | Feedback is written to stdout (captured by the log drain) and the file append is best-effort |
+| Conversation state in a module-level `Map` | With N isolates, ~(N−1)/N of follow-up turns silently start a new conversation | State is carried by the client, **HMAC-signed** (`src/lib/state/portable.ts`). Requires `SESSION_SECRET` |
+
+Two more platform limits are respected rather than discovered at runtime:
+
+- `maxDuration = 60` on `/api/chat` (the Hobby ceiling), with the app's own
+  `TURN_BUDGET_MS = 50_000` **inside** it so the app always fails first and can
+  report why. The model budgets (`MODEL_CALL_BUDGET_MS = 18_000`,
+  `MODEL_STREAM_TIMEOUT_MS = 35_000`) compose to fit.
+- `VOICE_MAX_BYTES` defaults to 4 MB on Vercel, under the 4.5 MB the platform
+  rejects at the edge — otherwise the app's own "recording too long" message is
+  unreachable and the user gets an opaque platform 413.
+
+`TRUST_PROXY` defaults to `on` when `process.env.VERCEL` is set. This is not a
+convenience: with it `off`, `clientIp()` returns the literal string `direct` for
+every visitor on earth and the whole deployment shares a single
+`RATE_LIMIT_RPM` bucket.
+
+### Environment variables
+
+| Variable | Required | Notes |
+|---|---|---|
+| `OPENROUTER_API_KEY` | **yes** | Without it the app still serves sources, but generates no answers |
+| `SESSION_SECRET` | **yes** | ≥16 chars. Absent = multi-turn context breaks across isolates. A value shorter than 16 chars is treated as absent, not as weak protection |
+| `AI_EMBEDDINGS_MODEL` | no | Defaults to `baai/bge-m3`. **Must** match the model recorded in `data/index/vectors.json` or `loadIndex()` refuses to mix vector spaces |
+| `SONIOX_API_KEY` | no | Voice input is disabled without it |
+| `DIAG_ENABLED` | no | Leave unset — `/internal` and `/api/diag` are off in production by default |
+
+### Deploy
+
+```bash
+vercel link --project liara-copilot
+vercel env add OPENROUTER_API_KEY production
+vercel env add SESSION_SECRET production      # openssl rand -base64 32
+vercel --prod
+```
+
+### Verifying a deployment
+
+```bash
+curl -s https://<app>.vercel.app/api/health | jq
+# expect: status ok, index.loaded true, index.chunkCount 3750, index.hasVectors true
+```
+
+A 503 from `/api/health` means the index did not reach the function — check
+that `data/index/` is committed and that `outputFileTracingIncludes` still
+names the five files `loadIndex()` opens (`chunks.json`, `lexical.json`,
+`meta.json`, `vectors.json`, `vectors.bin`).
+
+### Rebuilding the index
+
+```bash
+npm run sync-docs                    # pulls liara-cloud/docs
+npm run build-index                  # ~14 min, ~$0.01 of embeddings
+git add data/index && git commit     # the artifact IS the deployment input
+```
+
+`data/index/embeddings.json` is the **incremental build cache**, keyed by chunk
+hash so an unchanged chunk is never re-embedded. It is gitignored and never
+shipped; the server reads `vectors.bin` instead — 4.1 ms to adopt versus 69.6 ms
+to parse the JSON, and 5.2 MB of heap instead of 45.6 MB.
+
+`.gitattributes` marks `*.bin` as binary. Without it a line-ending conversion
+would corrupt the matrix on a Windows checkout.
+
+### Known ceilings on this target
+
+- **Rate limiting is per-isolate.** In-memory buckets are not shared, so the
+  effective global limit is `RATE_LIMIT_RPM × isolates`. It still stops one
+  client hammering one instance; it is not a global spend cap.
+- The FAQ answer cache and the single-flight map are also per-isolate, so a
+  burst of identical questions can cost more than one pipeline run.
+- Both are honest consequences of having no durable shared store on this
+  target. The conversation state — the one that was silently corrupting
+  user-visible behaviour — is fixed rather than documented.
+
+---
+
+## Target B — Docker on Liara (original target)
+
 
 Phase 1 is explicitly local-only (NFR10): no real Liara deployment has been
 performed. This document describes what a future deployment would look like
@@ -85,13 +182,33 @@ missing API key.
 scripts/build-index.ts` with no `AI_*` build args declared. Since ADR 0008 that
 is no longer the same thing as a lexical-only image: `AI_EMBEDDINGS_MODEL`
 defaults to `local:Xenova/multilingual-e5-small`, which needs no key, so the
-build stage embeds the corpus **provided the build has network access to fetch
-the model weights once**. In a no-network or cache-only build, embedding fails
-and the image falls back to a lexical index — check `embeddedCount` in
-`data/index/meta.json` inside the image rather than assuming either outcome.
-**Not verified in this repo:** no containerised index build has been run against
-the local-embeddings default; the number that has been measured
-(`embeddedCount: 3744`) comes from a host `npm run index`.
+build stage embeds the corpus **provided the build has network access to
+`github.com` (docs clone) and `huggingface.co` (model weights, ~90 MB)**.
+
+**The build FAILS on a no-network builder; it does not silently fall back.**
+`scripts/build-index.ts` calls `embedPassagesInBatches` unguarded, so a hub
+fetch error propagates and `docker build` exits non-zero. That is deliberate —
+a lexical-only image is a 16-point hit@1 regression that must not ship by
+accident — but it means an air-gapped or restricted builder needs an explicit
+opt-out: set `AI_EMBEDDINGS_MODEL=` (empty) for a lexical-only image, or build
+`data/index` out-of-band and `COPY` it. On Liara, `liara deploy -b germany`
+picks a build location with unrestricted access to both hosts.
+
+**The model cache ships in the image.** The build stage writes it to
+`TRANSFORMERS_CACHE=/app/.cache/transformers` and the runner stage copies it.
+Without that copy the weights are absent at runtime and Transformers.js fetches
+them **inside the first chat request**: measured against the real standalone
+artifact, the request sat in the `searching` stage for 100s+, streamed no
+answer, and ended only when the client gave up — 5 KB of the model had arrived.
+With the cache present the same load measures **766ms once, then 5ms per
+embed**. `EMBED_TIMEOUT_MS` (default 10s) is the belt-and-braces bound: past it
+the query embed rejects and retrieval degrades to lexical-only for that turn
+rather than holding the request open.
+
+Verify after any build: `embeddedCount` in `data/index/meta.json` inside the
+image (expected 3744), and that `/app/.cache/transformers` is non-empty.
+**Not verified in this repo:** no containerised build has been run —
+`embeddedCount: 3744` and the timings above come from host runs.
 
 There is still no build-arg/secret plumbing for
 `AI_EMBEDDINGS_MODEL`/`AI_BASE_URL`/`AI_API_KEY`, so a **provider-hosted**
@@ -164,7 +281,7 @@ Add to the Liara app environment (server-side; never in the client bundle):
 ```env
 # LLM — OpenRouter Free Router (default)
 OPENROUTER_API_KEY=...          # required for generation; server-side only
-OPENROUTER_MODEL=openrouter/free
+OPENROUTER_MODEL=nvidia/nemotron-3-super-120b-a12b:free
 # or a generic OpenAI-compatible provider (overrides OpenRouter):
 # AI_BASE_URL=... / AI_API_KEY=...
 

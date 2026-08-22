@@ -7,6 +7,7 @@ import type { AgentPlan, Hypothesis, SessionState } from '@/types';
 import { log } from '@/lib/obs/log';
 import { hashId } from '@/lib/security/hash';
 import { redactSecrets } from '@/lib/security/redact';
+import { unpackSession, portableStateEnabled } from '@/lib/state/portable';
 
 const MAX_SESSIONS = 5000;
 const TTL_MS = 24 * 60 * 60 * 1000;
@@ -42,7 +43,7 @@ function warnSingleInstanceCeiling(): void {
 
 if (process.env.NODE_ENV === 'production') warnSingleInstanceCeiling();
 
-export function getOrCreateSession(id?: string): SessionState {
+export function getOrCreateSession(id?: string, stateToken?: string): SessionState {
   if (id) {
     const s = store.get(id);
     if (s && Date.now() - s.updatedAt < TTL_MS) {
@@ -50,16 +51,28 @@ export function getOrCreateSession(id?: string): SessionState {
       store.set(id, s);
       return s;
     }
-    // The client HELD an id and this process cannot resolve it, so the turn
-    // below silently starts a brand-new conversation. That is the visible shape
-    // of both the multi-instance failure and eviction/expiry — make it loud in
-    // the logs at least (EP-SCALE-01). Hashed: the raw id is a credential.
+    // This process cannot resolve the id — on serverless that is the NORMAL
+    // case, because the previous turn ran in a different isolate. Before
+    // giving up and silently starting a new conversation, try the copy the
+    // client carried. It is HMAC-signed, so adopting it is safe: only this
+    // server could have authored it, and it must name the same id.
+    const carried = unpackSession(stateToken, id);
+    if (carried) {
+      save(carried); // warm this isolate's cache for the rest of the turn
+      log('info', 'session_restored_from_client', { sessionId: hashId(id), turns: carried.turns });
+      return carried;
+    }
+    // Genuinely unresolvable: expired, evicted, or no portable state. The turn
+    // below starts a brand-new conversation, which is the visible shape of the
+    // multi-instance failure (EP-SCALE-01). Hashed: the raw id is a credential.
     log('warn', 'session_not_resolved', {
       sessionId: hashId(id),
       reason: s ? 'expired' : 'unknown',
       stored: store.size,
+      hadToken: Boolean(stateToken),
+      portable: portableStateEnabled(),
     });
-    warnSingleInstanceCeiling();
+    if (!portableStateEnabled()) warnSingleInstanceCeiling();
   }
   // Unknown/expired ids are NEVER adopted: a client cannot pre-create a
   // guessable session id and wait for someone to collide with it. Session

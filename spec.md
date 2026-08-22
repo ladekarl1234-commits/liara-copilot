@@ -62,9 +62,9 @@ dashboard as the primary surface; autoplaying spoken answers.
   honestly or ask one targeted clarification. No fabricated absence claims.
 - **FR5 Citations.** Cite specific page + section anchor
   (`https://docs.liara.ir/...#anchor`), never just the docs root. Measured:
-  only **36.6%** of chunks carry an authored `<Section id=…>` anchor, so the rest
+  only **36.5%** of chunks carry an authored `<Section id=…>` anchor, so the rest
   cite a `#:~:text=` highlight fragment on the chunk's opening sentence —
-  36.6% anchored + 57.4% text-fragment = **93.9% deep-linked**, 6.1% land at the
+  36.5% anchored + 57.4% text-fragment = **93.9% deep-linked**, 6.1% land at the
   page top (`EP-PRD-06` / `EP-RET-09`; re-measured by
   `tests/docs-numbers.test.ts`).
 - **FR6 Claim verification.** A post-answer stage checks Liara-specific claims

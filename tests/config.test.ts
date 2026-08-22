@@ -36,7 +36,11 @@ describe('config', () => {
     const c = config();
     expect(c.fastModel).toBe('openai/gpt-4.1-mini'); // computed default when no provider is configured
     expect(c.VERIFY_CLAIMS).toBe('on');
-    expect(c.MODEL_TIMEOUT_MS).toBe(30_000);
+    expect(c.MODEL_TIMEOUT_MS).toBe(15_000);
+    // the three model budgets must compose to less than the route's TURN_BUDGET_MS
+    // (50s), or the platform kills the invocation before the app can report why
+    expect(c.MODEL_CALL_BUDGET_MS).toBe(18_000);
+    expect(c.MODEL_STREAM_TIMEOUT_MS).toBe(35_000);
     expect(c.MODEL_MAX_RETRIES).toBe(2);
     expect(c.RATE_LIMIT_RPM).toBe(20);
     expect(c.MAX_INPUT_CHARS).toBe(8_000);

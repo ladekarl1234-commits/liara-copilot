@@ -82,8 +82,29 @@ async function main() {
     for (const h of Object.keys(vectors)) if (!live.has(h)) delete vectors[h];
     embeddedCount = Object.keys(vectors).length; // vectors SHIPPED, not just newly computed
     const dims = Object.values(vectors)[0]?.length ?? 0;
+    // embeddings.json stays, but it is now purely the INCREMENTAL BUILD CACHE:
+    // keyed by content hash so an unchanged chunk is never re-embedded. It is
+    // gitignored and never shipped.
     fs.writeFileSync(embPath, JSON.stringify({ model: embedModel, dims, vectors }));
-    console.log(`[build-index] embeddings: ${Object.keys(vectors).length} vectors, ${dims} dims -> ${embPath}`);
+
+    // The SHIPPED artifact is a raw Float32 matrix. The JSON form was 12.1 MB
+    // of text that had to be parsed into 1.4M JS numbers and then copied into a
+    // typed array on every cold start; the same numbers are 5.75 MB of bytes
+    // that `Float32Array.from(buffer)` adopts with no parse at all. On Vercel
+    // that cost is paid per isolate, so it is worth the extra file.
+    // Rows are in chunks.json order, restricted to chunks that actually have a
+    // vector — the same `present` set loadIndex() used to compute itself.
+    const present = chunks.filter((c) => vectors[c.hash]);
+    const matrix = new Float32Array(present.length * dims);
+    present.forEach((c, i) => matrix.set(vectors[c.hash], i * dims));
+    fs.writeFileSync(path.join(indexDir, 'vectors.bin'), Buffer.from(matrix.buffer, 0, matrix.byteLength));
+    fs.writeFileSync(
+      path.join(indexDir, 'vectors.json'),
+      JSON.stringify({ model: embedModel, dims, count: present.length, ids: present.map((c) => c.id) }),
+    );
+    console.log(
+      `[build-index] embeddings: ${Object.keys(vectors).length} cached, ${present.length} shipped, ${dims} dims -> vectors.bin (${matrix.byteLength} bytes)`,
+    );
   } else {
     console.log('[build-index] embeddings skipped (AI_EMBEDDINGS_MODEL not configured) — lexical-only index');
   }

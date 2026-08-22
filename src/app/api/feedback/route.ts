@@ -55,25 +55,39 @@ export async function POST(req: NextRequest) {
     // verbatim, so an un-redacted sink here is a published secret (EP-SEC-01).
     const comment = fb.comment ? redactSecrets(fb.comment).trim() : '';
 
-    const dir = config().RUNTIME_DIR;
-    await fs.promises.mkdir(dir, { recursive: true });
-    const file = path.join(dir, 'feedback.jsonl');
-    const size = await fs.promises.stat(file).then((s) => s.size).catch(() => 0);
-    if (size > MAX_FEEDBACK_BYTES) await fs.promises.rename(file, file + '.1').catch(() => {});
-    await fs.promises.appendFile(
-      file,
-      JSON.stringify({
-        ts: new Date().toISOString(),
-        // hashed: the raw session id is a session credential — anyone who can
-        // read this file could otherwise resume the conversation (EP-SEC-02).
-        // 12-char prefix matches request_metrics, so rows still join.
-        session: hashId(fb.sessionId),
-        messageId: fb.messageId,
-        verdict: fb.verdict,
-        ...(comment ? { comment: comment.slice(0, 2000) } : {}),
-      }) + '\n',
-      'utf8',
-    );
+    const row = {
+      ts: new Date().toISOString(),
+      // hashed: the raw session id is a session credential — anyone who can
+      // read this row could otherwise resume the conversation (EP-SEC-02).
+      // 12-char prefix matches request_metrics, so rows still join.
+      session: hashId(fb.sessionId),
+      messageId: fb.messageId,
+      verdict: fb.verdict,
+      ...(comment ? { comment: comment.slice(0, 2000) } : {}),
+    };
+
+    // stdout is the ONLY sink that exists on every target. On Vercel the
+    // filesystem is read-only outside /tmp, and this route used to let the
+    // resulting EROFS fall through to the generic catch — so every thumbs-up
+    // and thumbs-down answered HTTP 500 while the user watched. The log drain
+    // captures this line on Vercel; on the Docker/Liara image the JSONL below
+    // is still the durable copy.
+    log('info', 'feedback', row);
+
+    // Best-effort durable append. A read-only or full filesystem must degrade
+    // to "logged but not persisted", never to a failed user action.
+    try {
+      const dir = config().RUNTIME_DIR;
+      await fs.promises.mkdir(dir, { recursive: true });
+      const file = path.join(dir, 'feedback.jsonl');
+      const size = await fs.promises.stat(file).then((s) => s.size).catch(() => 0);
+      if (size > MAX_FEEDBACK_BYTES) await fs.promises.rename(file, file + '.1').catch(() => {});
+      await fs.promises.appendFile(file, JSON.stringify(row) + '\n', 'utf8');
+    } catch (e) {
+      log('warn', 'feedback_persist_skipped', {
+        reason: e instanceof Error ? e.message : String(e),
+      });
+    }
 
     if (fb.verdict === 'not_helpful' || fb.verdict === 'not_solved') {
       // Resolve messageId back to the question it answered (EP-PRD-04): without

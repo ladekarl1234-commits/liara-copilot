@@ -24,9 +24,13 @@ function parse<T extends z.ZodTypeAny>(schema: T, body: unknown): z.output<T> {
   return r.data;
 }
 
-export function parseChatRequest(body: unknown): { sessionId?: string; message: string } {
+export function parseChatRequest(body: unknown): { sessionId?: string; message: string; state?: string } {
   const schema = z.object({
     sessionId: sessionIdSchema.optional(),
+    // Opaque signed conversation state minted by this server. Bounded here so a
+    // forged blob is rejected on length before any HMAC work; the signature
+    // check in lib/state/portable is what actually decides whether to trust it.
+    state: z.string().max(16_000).optional(),
     message: z
       .string({ required_error: 'message is required', invalid_type_error: 'message must be a string' })
       .transform((s) => s.trim())

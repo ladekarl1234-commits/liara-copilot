@@ -67,25 +67,25 @@ describe('MAINT-02 (client half): the server message is a fallback, not dead wei
 describe('PRD-09: transcript and session id are persisted together', () => {
   it('round-trips the transcript with its session id', () => {
     const messages = [msg(1), msg(2, 'assistant')];
-    const raw = writePersisted(messages, 's-1', 1000);
+    const raw = writePersisted(messages, 's-1', 'tok-1', 1000);
     expect(raw).not.toBeNull();
-    expect(readPersisted(raw, 1000)).toEqual({ at: 1000, sessionId: 's-1', messages });
+    expect(readPersisted(raw, 1000)).toEqual({ at: 1000, sessionId: 's-1', state: 'tok-1', messages });
   });
 
   it('keeps only the most recent 40 messages', () => {
     const messages = Array.from({ length: 55 }, (_, i) => msg(i));
-    const restored = readPersisted(writePersisted(messages, 's-1', 1000), 1000);
+    const restored = readPersisted(writePersisted(messages, 's-1', null, 1000), 1000);
     expect(restored?.messages).toHaveLength(40);
     expect(restored?.messages[0]?.id).toBe('m-15');
     expect(restored?.messages.at(-1)?.id).toBe('m-54');
   });
 
   it('an empty transcript stores nothing', () => {
-    expect(writePersisted([], 's-1', 1000)).toBeNull();
+    expect(writePersisted([], 's-1', null, 1000)).toBeNull();
   });
 
   it('expires with the 24h server session TTL, so a dead id is never re-sent', () => {
-    const raw = writePersisted([msg(1)], 's-1', 0);
+    const raw = writePersisted([msg(1)], 's-1', null, 0);
     const day = 24 * 60 * 60 * 1000;
     expect(readPersisted(raw, day - 1)).not.toBeNull();
     expect(readPersisted(raw, day + 1)).toBeNull();
@@ -101,7 +101,12 @@ describe('PRD-09: transcript and session id are persisted together', () => {
   it('the hook restores both halves and persists only when idle', () => {
     const HOOK = fs.readFileSync(path.join('src', 'components', 'useChat.ts'), 'utf8');
     // UX-04's fix was to restore neither; PRD-09's is to restore both at once.
-    expect(HOOK).toMatch(/sessionRef\.current = p\.sessionId;\s*\n\s*setSessionId\(p\.sessionId\);\s*\n\s*setMessages\(p\.messages\);/);
+    expect(HOOK).toMatch(
+      /sessionRef\.current = p\.sessionId;\s*\n\s*stateRef\.current = p\.state;\s*\n\s*setSessionId\(p\.sessionId\);\s*\n\s*setMessages\(p\.messages\);/,
+    );
+    // the signed server state is the third half: restoring the id and the
+    // transcript without it resumes a conversation the server cannot resolve
+    expect(HOOK).toMatch(/state: stateRef\.current \?\? undefined/);
     expect(HOOK).toMatch(/if \(status !== 'idle'\) return;/);
     // sessionStorage, not localStorage: the session id is a credential
     expect(HOOK).toContain('window.sessionStorage');

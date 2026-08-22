@@ -46,6 +46,7 @@ export async function verifyAnswer(
       maxTokens: 400,
       temperature: 0,
       jsonSchema: {},
+      budgetMs: cfg.VERIFY_BUDGET_MS,
       signal,
     });
     const parsed = VerifySchema.safeParse(extractJson(res.text));

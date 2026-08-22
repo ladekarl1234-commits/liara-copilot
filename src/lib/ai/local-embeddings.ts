@@ -25,7 +25,33 @@ export const DEFAULT_LOCAL_EMBED_MODEL = 'Xenova/multilingual-e5-small';
  *     loading an index never materializes/freezes the config singleton.
  * Setting the variable to an empty string opts out to lexical-only.
  */
-export const DEFAULT_EMBEDDINGS_MODEL = 'local:';
+export const DEFAULT_EMBEDDINGS_MODEL = 'baai/bge-m3';
+
+/**
+ * The no-API-key alternative: `local:` runs multilingual-e5-small in-process.
+ * It is still supported and still what the Docker image bakes in, but it is no
+ * longer the default, for two measured reasons:
+ *
+ *  1. It is not reachable on a serverless target. onnxruntime-web is 63 MB and
+ *     @xenova/transformers another 63 MB of function bundle, and the weights
+ *     are a further 52 MB that have to be fetched inside a request.
+ *  2. Its failure mode is unrecoverable. A truncated weights file in the cache
+ *     (35,083,220 bytes on disk here against a real 118,308,185) makes
+ *     `pipeline()` exit the Node process with code 127, no JS error and no
+ *     stderr — protobuf parsing fails inside the WASM runtime. Nothing in
+ *     `search()`'s try/catch or `embed.ts`'s timeout can catch a process abort,
+ *     so a corrupt cache takes down the server rather than degrading to
+ *     lexical. `env.allowLocalModels = false` does not help: transformers.js
+ *     serves the cached file without revalidating its length.
+ *     (Cold load with a good cache is 770-810ms; warm query embed is ~5ms, and
+ *     peak RSS for the embedder alone is ~790MB.)
+ *
+ * bge-m3 through the configured provider beats what the local model scored, on
+ * the same corpus and the same eval set — hit@5 0.833 lexical / 0.896 hybrid,
+ * MRR 0.630 / 0.748, evidence-recall 0.792 / 0.875 — for ~$0.01 per full index
+ * rebuild and roughly nothing per query.
+ */
+export const LOCAL_EMBEDDINGS_MODEL = 'local:';
 export const LOCAL_EMBED_DIM = 384;
 
 async function getPipe(model: string) {

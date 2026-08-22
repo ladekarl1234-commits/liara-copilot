@@ -1,0 +1,195 @@
+{
+  "measuredAt": "2026-08-22T07:21:12.164Z",
+  "cases": 8,
+  "repeat": 1,
+  "rows": [
+    {
+      "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "n": 8,
+      "errors": 2,
+      "errorRate": 0.25,
+      "ttftMs": {
+        "p50": 1617,
+        "p95": 41656
+      },
+      "totalMs": {
+        "p50": 7934,
+        "p95": 51446
+      },
+      "citationRate": 1,
+      "phantomRate": 0,
+      "languageMatch": 1,
+      "refusalRate": 0,
+      "samples": [
+        {
+          "id": "ftp-deploy-assumption",
+          "ttft": 41656,
+          "total": 51446,
+          "markers": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "text": "Liara does **not** use FTP for deployments. The supported methods are:\n\n1. **Liara CLI** – `liara deploy` from your project root [1]  \n2. **GitHub/GitLab/Bitbucket integration** – push to the connecte"
+        },
+        {
+          "id": "pop3-assumption",
+          "err": null
+        }
+      ],
+      "score": 0.9697
+    },
+    {
+      "model": "nvidia/nemotron-3-super-120b-a12b:free",
+      "n": 8,
+      "errors": 0,
+      "errorRate": 0,
+      "ttftMs": {
+        "p50": 1066,
+        "p95": 5931
+      },
+      "totalMs": {
+        "p50": 1617,
+        "p95": 7074
+      },
+      "citationRate": 0.875,
+      "phantomRate": 0,
+      "languageMatch": 1,
+      "refusalRate": 0.25,
+      "samples": [
+        {
+          "id": "ftp-deploy-assumption",
+          "ttft": 1146,
+          "total": 1617,
+          "markers": [],
+          "text": "I couldn't find this in the official docs. Liara does not use FTP for deployment; it uses Git push, Liara CLI, or the web console for uploading application files. For Next.js apps, deployment is done "
+        },
+        {
+          "id": "pop3-assumption",
+          "ttft": 836,
+          "total": 1297,
+          "markers": [
+            1
+          ],
+          "text": "در مستندات رسمی لیارا پیدا نکردم که سرویس ایمیل‌سرور لیارا از پروتکل POP3 پشتیبانی کند یا تنظیمات host و portی برای آن ارائه دهد. در واقع، در مستندات صریحاً ذکر شده که لیارا امکان استفاده از پروتکل‌ها"
+        }
+      ],
+      "score": 0.93
+    },
+    {
+      "model": "nvidia/nemotron-nano-12b-v2-vl:free",
+      "n": 8,
+      "errors": 0,
+      "errorRate": 0,
+      "ttftMs": {
+        "p50": 3139,
+        "p95": 43640
+      },
+      "totalMs": {
+        "p50": 33254,
+        "p95": 86990
+      },
+      "citationRate": 0.875,
+      "phantomRate": 0,
+      "languageMatch": 1,
+      "refusalRate": 0.125,
+      "samples": [
+        {
+          "id": "ftp-deploy-assumption",
+          "ttft": 7363,
+          "total": 21103,
+          "markers": [
+            4
+          ],
+          "text": "I couldn't find FTP credentials in the official docs. Liara uses its own CLI tool for deployment rather than FTP. To deploy your Next.js app:\n\n1. First ensure you've created a Liara network and app:\n "
+        },
+        {
+          "id": "pop3-assumption",
+          "ttft": 2494,
+          "total": 43668,
+          "markers": [],
+          "text": " برای استفاده از سرویس ایمیل سرور لیارا با Outlook، باید از **پنل مدیریت ایمیل سرور لیارا** استفاده کنید. طبق شواهد، **پروتکل POP3 در سرویس ایمیل سرور لیارا پشتیبانی نمی‌شود** و به جای آن، باید از **پ"
+        }
+      ],
+      "score": 0.8911
+    },
+    {
+      "model": "nvidia/nemotron-3-nano-30b-a3b:free",
+      "n": 8,
+      "errors": 0,
+      "errorRate": 0,
+      "ttftMs": {
+        "p50": 1062,
+        "p95": 1568
+      },
+      "totalMs": {
+        "p50": 2095,
+        "p95": 15010
+      },
+      "citationRate": 0.75,
+      "phantomRate": 0,
+      "languageMatch": 1,
+      "refusalRate": 0.125,
+      "samples": [
+        {
+          "id": "ftp-deploy-assumption",
+          "ttft": 1189,
+          "total": 2009,
+          "markers": [
+            1,
+            2,
+            3
+          ],
+          "text": "I couldn't find this in the official docs.  \nLiara does not use FTP for deploying Next.js apps.  \nUse one of these supported methods instead:  \n\n- **Liara CLI** (`liara create` / `liara deploy`)  \n- *"
+        },
+        {
+          "id": "pop3-assumption",
+          "ttft": 1062,
+          "total": 2582,
+          "markers": [],
+          "text": "در مستندات رسمی لیارا به‌عنوان یک ایمیل‌سرور، از پروتکل‌های POP3 یا IMAP پشتیبانی نمی‌شود؛ بنابراین تنظیمات POP3 برای Outlook وجود ندارد. برای استفاده از Outlook باید از سرویس ارسال ایمیل (SMTP) استفا"
+        }
+      ],
+      "score": 0.8801
+    },
+    {
+      "model": "dots-studio/dots-3-note-preview:free",
+      "n": 8,
+      "errors": 0,
+      "errorRate": 0,
+      "ttftMs": {
+        "p50": 1519,
+        "p95": 2962
+      },
+      "totalMs": {
+        "p50": 3991,
+        "p95": 5596
+      },
+      "citationRate": 0.75,
+      "phantomRate": 0,
+      "languageMatch": 1,
+      "refusalRate": 0,
+      "samples": [
+        {
+          "id": "ftp-deploy-assumption",
+          "ttft": 1220,
+          "total": 3504,
+          "markers": [],
+          "text": "Based on the provided Liara documentation, there is **no mention of FTP credentials** for deploying a Next.js application. \n\nLiara does not support traditional FTP uploads for application deployment. "
+        },
+        {
+          "id": "pop3-assumption",
+          "ttft": 2440,
+          "total": 5596,
+          "markers": [
+            1,
+            2
+          ],
+          "text": "بر اساس مستندات رسمی لیارا، سرویس ایمیل لیارا **ارائه‌دهنده صندوق پستی (Mailbox) نیست** و **از پروتکل‌های POP3/IMAP پشتیبانی نمی‌کند** [1]. بنابراین، **امکان تنظیم POP3 برای Outlook یا هر سایر نرم‌افز"
+        }
+      ],
+      "score": 0.8715
+    }
+  ]
+}

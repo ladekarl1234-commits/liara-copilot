@@ -1,0 +1,8 @@
+node_modules
+.next
+.git
+.cache
+data/liara-docs
+data/index/embeddings.json
+.playwright-cli
+docs/reviews/round-001/screenshots

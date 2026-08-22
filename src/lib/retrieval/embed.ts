@@ -90,5 +90,42 @@ export function queryEmbedder(): ((texts: string[]) => Promise<number[][]>) | un
   if (!model) return undefined;
   // a provider-hosted model still needs a configured provider; a local: one does not
   if (!localModelId(model) && !cfg.aiConfigured) return undefined;
-  return (texts: string[]) => embedQueries(texts, model);
+  const budgetMs = cfg.EMBED_TIMEOUT_MS;
+  return (texts: string[]) => withTimeout(embedQueries(texts, model), budgetMs);
+}
+
+/**
+ * Bound ONE query-side embedding call.
+ *
+ * Why: nothing on the request path bounded this. With a cold model cache the
+ * local path fetches ~90 MB from the HF hub *inside the request* — measured, a
+ * chat request sat in the `searching` stage past 100s and streamed no answer,
+ * ending only when the client gave up. `search()` already degrades to
+ * lexical-only when `embedQuery` REJECTS (retrieval/index.ts, vector_search_failed);
+ * it had no defence against one that simply never settles. This turns the hang
+ * into that existing, tested degrade path.
+ *
+ * Deliberately NOT applied to `embedPassages`: the index build legitimately
+ * runs for minutes and is offline, not on a request.
+ *
+ * The underlying pipeline load is memoized per model, so a timed-out load keeps
+ * warming in the background and the next request gets hybrid retrieval back.
+ */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`query embedding exceeded ${ms}ms — degrading to lexical-only`)),
+      ms,
+    );
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
 }

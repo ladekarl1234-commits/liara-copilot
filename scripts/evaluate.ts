@@ -209,11 +209,13 @@ function rates(a: CatAgg) {
 export interface Baseline {
   sourced: number;
   gateCases: number;
+  hit1: number;
   hit5: number;
   mrr: number;
   evidenceRecall: number;
   refusalRecall: number;
   falseRefusalRate: number;
+  retrievalMode: string;
   index: { docsCommit: string; chunkCount: number };
 }
 
@@ -223,6 +225,11 @@ export interface Baseline {
  * only way to move them, and that is a visible diff of evals/baseline.json. */
 export function floorsFrom(b: Baseline) {
   return {
+    // DEFECT 5: hit@1 is the ONLY metric whose McNemar test distinguishes
+    // hybrid from lexical (p=0.0039) — every hit@5 pair is p>=0.625 — so a
+    // total regression to lexical-only search used to pass CI silently.
+    // Derived the same measured-minus-one-case way as every other floor.
+    hit1: (b.hit1 * b.sourced - 1) / b.sourced,
     hit5: (b.hit5 * b.sourced - 1) / b.sourced,
     mrr: (b.mrr * b.sourced - 1) / b.sourced,
     evidenceRecall: (b.evidenceRecall * b.sourced - 1) / b.sourced,
@@ -419,12 +426,22 @@ async function runRetrieval(cases: EvalCase[], enforceFloors = true) {
       if (base.sourced !== summary.sourced || base.gateCases !== summary.gateCases) {
         console.warn(`WARN: case counts changed (sourced ${base.sourced}->${summary.sourced}, gate ${base.gateCases}->${summary.gateCases}); floors are ratios and were not re-derived.`);
       }
+      // DEFECT 5: a hybrid->lexical regression (embedder broken, vectors
+      // missing, env misconfigured) previously passed every floor above,
+      // because hit@5/MRR/evidenceRecall/refusalRecall don't reliably
+      // distinguish the two modes on this eval set. Catch it directly: the
+      // shipped mode must match what the baseline was accepted at.
+      if (base.retrievalMode !== summary.retrievalMode) {
+        console.error(`FAIL: retrievalMode "${summary.retrievalMode}" does not match baseline "${base.retrievalMode}" — this run is not measuring the configuration evals/baseline.json was accepted for.`);
+        process.exitCode = 1;
+      }
       const fail = (label: string, got: number, floor: number, higherIsBetter = true) => {
         if (higherIsBetter ? got < floor : got > floor) {
           console.error(`FAIL: ${label} ${got.toFixed(3)} ${higherIsBetter ? 'below floor' : 'above ceiling'} ${floor.toFixed(3)} (baseline ${higherIsBetter ? '-' : '+'} 1 case)`);
           process.exitCode = 1;
         }
       };
+      fail('hit@1', summary.hit1, floors.hit1);
       fail('hit@5', summary.hit5, floors.hit5);
       fail('MRR', summary.mrr, floors.mrr);
       fail('evidence-recall', summary.evidenceRecall, floors.evidenceRecall);

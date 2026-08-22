@@ -80,7 +80,10 @@ export function loadIndex(indexDir = config().INDEX_DIR): LoadedIndex {
   const lexical = MiniSearch.loadJSON(fs.readFileSync(lexicalPath, 'utf8'), miniOptions());
 
   let vectors: LoadedIndex['vectors'] = null;
-  const embPath = path.join(indexDir, 'embeddings.json');
+  // vectors.json is the shipped header (model, dims, count, ids); the numbers
+  // live beside it in vectors.bin. embeddings.json is only the build cache and
+  // is deliberately NOT read here — see scripts/build-index.ts.
+  const embPath = path.join(indexDir, 'vectors.json');
   // Load vectors ONLY when this deployment is configured to embed queries with
   // the SAME model that produced them. Two reasons: (1) comparing a query
   // vector to passages from a different model silently compares incompatible
@@ -95,10 +98,11 @@ export function loadIndex(indexDir = config().INDEX_DIR): LoadedIndex {
   // cannot disagree about whether this deployment is hybrid.
   const embedModel = process.env.AI_EMBEDDINGS_MODEL?.trim() ?? DEFAULT_EMBEDDINGS_MODEL;
   if (embedModel && fs.existsSync(embPath)) {
-    const raw = JSON.parse(fs.readFileSync(embPath, 'utf8')) as {
+    const head = JSON.parse(fs.readFileSync(embPath, 'utf8')) as {
       model: string;
       dims: number;
-      vectors: Record<string, number[]>;
+      count: number;
+      ids: string[];
     };
     // Compare RESOLVED model ids, not raw strings: `local:` and
     // `local:Xenova/multilingual-e5-small` are the same model (the bare prefix
@@ -106,19 +110,25 @@ export function loadIndex(indexDir = config().INDEX_DIR): LoadedIndex {
     // 0004 prints. Comparing raw strings made an identical configuration throw
     // IndexMissingError from loadIndex(), i.e. 500 every chat request.
     const same = (a: string) => localModelId(a) ?? a;
-    if (same(raw.model) !== same(embedModel)) {
+    if (same(head.model) !== same(embedModel)) {
       throw new IndexMissingError(
         indexDir,
-        `embeddings.json was built with "${raw.model}" but AI_EMBEDDINGS_MODEL is "${embedModel}" — rebuild with \`npm run build-index\``,
+        `vectors were built with "${head.model}" but AI_EMBEDDINGS_MODEL is "${embedModel}" — rebuild with \`npm run build-index\``,
       );
     }
-    const present = chunks.filter((c) => raw.vectors[c.hash]);
-    if (present.length) {
-      // written straight into the typed array: an intermediate number[] of
-      // 1.4M elements costs ~11MB and a full copy for nothing
-      const matrix = new Float32Array(present.length * raw.dims);
-      present.forEach((c, i) => matrix.set(raw.vectors[c.hash], i * raw.dims));
-      vectors = { dims: raw.dims, model: raw.model, matrix, ids: present.map((c) => c.id) };
+    // The matrix is raw little-endian Float32 in vectors.json's `ids` order —
+    // no parse, no intermediate number[], no copy of 1.4M elements.
+    const buf = fs.readFileSync(path.join(indexDir, 'vectors.bin'));
+    const expected = head.count * head.dims * Float32Array.BYTES_PER_ELEMENT;
+    if (buf.byteLength !== expected) {
+      throw new IndexMissingError(
+        indexDir,
+        `vectors.bin is ${buf.byteLength} bytes but vectors.json declares ${head.count}x${head.dims} (${expected}) — rebuild with \`npm run build-index\``,
+      );
+    }
+    if (head.count) {
+      const matrix = new Float32Array(buf.buffer, buf.byteOffset, head.count * head.dims);
+      vectors = { dims: head.dims, model: head.model, matrix, ids: head.ids };
     }
   }
 
@@ -129,6 +139,14 @@ export function loadIndex(indexDir = config().INDEX_DIR): LoadedIndex {
     vectors,
     meta,
   };
+  // DEFECT 4: build the corpus IDF here, at load time, instead of leaving it
+  // to the first call to `search()` — which re-tokenizes the whole corpus
+  // (measured ~303ms) and used to be paid on a serverless cold isolate's
+  // FIRST user request. `corpusIdf()` itself stays lazy/memoizing (`idx.idf`)
+  // for any caller that builds a `LoadedIndex` by hand instead of going
+  // through `loadIndex()` — tests do this — so this is purely moving WHEN
+  // the one real build happens, not changing what it computes.
+  corpusIdf(loaded);
   globalThis.__liaraIndex = loaded;
   return loaded;
 }
@@ -218,15 +236,46 @@ export async function search(
     return { chunks: [], confidence: 'low', queries: [], filters, latencyMs: 0 };
   }
 
-  const rrf = new Map<string, number>();
+  // DEFECT 2: each modality is fused WITHIN itself first (lexicalRrf /
+  // vectorRrf), then the two are combined with an EXPLICIT, named weight —
+  // rather than dumping every list from both modalities into one shared RRF
+  // map, which secretly weights a modality by however many query-variant
+  // lists it happens to contribute. Measured over the 61 eval questions:
+  // lexical contributes 1.13 (fa) / 1.53 (en) / 1.40 (mixed) lists per query
+  // (expandQueries' EN->FA translation firing on the majority of English/
+  // mixed questions) while vector always contributes exactly 1 (it embeds
+  // `qs`, never the synthetic expansion) — so English questions got a
+  // 1.53:1 lexical-over-vector weighting nobody chose. Dividing each
+  // modality's summed RRF by its OWN list count makes the combination
+  // independent of that accident; a doc that corroborates across more of
+  // ITS OWN modality's variants still scores higher than one that doesn't
+  // (2 lists worth of low-rank agreement beats 1), but the two modalities'
+  // overall footprints are now comparable regardless of how many synthetic
+  // variants either side produced.
+  const LEXICAL_WEIGHT = 1;
+  const VECTOR_WEIGHT = 1;
+  const lexicalRrf = new Map<string, number>();
+  const vectorRrf = new Map<string, number>();
+  let lexicalLists = 0;
+  let vectorLists = 0;
   let bestScorePerToken = 0;
 
-  const add = (ids: string[]) => {
-    ids.forEach((id, rank) => rrf.set(id, (rrf.get(id) ?? 0) + 1 / (RRF_K + rank)));
+  const rrfAdd = (map: Map<string, number>, ids: string[]) => {
+    ids.forEach((id, rank) => map.set(id, (map.get(id) ?? 0) + 1 / (RRF_K + rank)));
   };
 
   const filterFn = buildFilter(idx, filters);
   const expanded = expandQueries(qs);
+  // DEFECT 3: bestScorePerToken feeds the gate's scoreDensity bars
+  // (STRONG/HIGH_SCORE_DENSITY) and docs/RETRIEVAL.md documents it as
+  // "computed on the original queries only — never the synthetic EN->FA
+  // expansion, whose short query would otherwise inflate the signal". That
+  // was true for `coverage` (passed `qs`) but false for this Math.max, which
+  // used to run over `expanded` too. Measured inflation: "where do I set
+  // environment variables" density 36.3 -> 65.7 (+81%) on the synthetic
+  // expansion alone — enough to cross both scoreDensity bars on a query the
+  // user never typed. `originalQueries` restores the documented contract.
+  const originalQueries = new Set(qs);
   if (deps.mode?.lexical !== false) for (const q of expanded) {
     const qTokens = tokenizeFa(q);
     let results = idx.lexical.search(q, {
@@ -241,18 +290,30 @@ export async function search(
       results = results.concat(unfiltered.filter((r) => !results.some((x) => x.id === r.id)));
     }
     results = results.slice(0, CANDIDATES_PER_QUERY);
-    if (results.length && qTokens.length) {
+    if (originalQueries.has(q) && results.length && qTokens.length) {
       bestScorePerToken = Math.max(bestScorePerToken, results[0].score / new Set(qTokens).size);
     }
-    add(results.map((r) => String(r.id)));
+    rrfAdd(lexicalRrf, results.map((r) => String(r.id)));
+    lexicalLists++;
   }
+  // Vector-only mode (deps.mode.lexical === false) leaves bestScorePerToken at
+  // 0 — deliberately, not silently: there is no MiniSearch BM25 score in that
+  // mode to build a density from, so scoreDensity-gated tiers ('high',
+  // strongEvidence) are correctly unreachable rather than reachable on a
+  // fabricated number. Every production caller runs lexical, so this only
+  // affects `scripts/benchmark-retrieval-modes.ts`'s isolated 'vector' mode,
+  // which already scores on the raw ranking (`rankOnly: true`) and never
+  // reaches the gate.
 
   // vector lists
   let vectorUsed = false;
   if (deps.mode?.vector !== false && idx.vectors && deps.embedQuery) {
     try {
       const embs = await deps.embedQuery(qs);
-      for (const e of embs) add(vectorTopK(idx, e, CANDIDATES_PER_QUERY, filters));
+      for (const e of embs) {
+        rrfAdd(vectorRrf, vectorTopK(idx, e, CANDIDATES_PER_QUERY, filters));
+        vectorLists++;
+      }
       vectorUsed = true;
     } catch (e) {
       // Vector search is an enhancement — lexical results stand alone — but now
@@ -273,6 +334,11 @@ export async function search(
       }
     }
   }
+
+  // combine the two modalities' own fused rankings with the explicit weights
+  const rrf = new Map<string, number>();
+  if (lexicalLists) for (const [id, v] of lexicalRrf) rrf.set(id, (rrf.get(id) ?? 0) + (LEXICAL_WEIGHT * v) / lexicalLists);
+  if (vectorLists) for (const [id, v] of vectorRrf) rrf.set(id, (rrf.get(id) ?? 0) + (VECTOR_WEIGHT * v) / vectorLists);
 
   // fuse + deterministic boosts
   const qTokenSet = new Set(qs.flatMap(tokenizeFa));
@@ -343,11 +409,31 @@ export async function search(
     // the one that actually answers the query) — CORR-R3-04
     const bodyKey = normalizeFa(s.chunk.text).replace(/\s+/g, ' ').trim();
     if (seenBodies.has(bodyKey)) continue; // duplicate/near-identical body
-    if (chars + s.chunk.text.length > MAX_EVIDENCE_CHARS && selected.length >= 1) break;
+    // `continue`, NOT `break`. One oversized chunk used to terminate selection
+    // outright, discarding every smaller above-cutoff chunk behind it — so
+    // evidence was governed by chunk SIZE, not relevance. Measured over the 61
+    // eval questions: 46 (75%) stopped here rather than on the relevance cutoff
+    // (1 case) or a full slate (14), 15 ended with fewer than the 5 chunks the
+    // answer prompt can carry, and 39 chunks that would have fit were dropped.
+    if (chars + s.chunk.text.length > MAX_EVIDENCE_CHARS && selected.length >= 1) continue;
     seenBodies.add(bodyKey);
     selected.push(s);
     chars += s.chunk.text.length;
   }
+  // DEFECT 6 (tried, reverted): a soft per-page cap (MAX_CHUNKS_PER_PAGE = 3,
+  // skip-then-backfill from the capped-out chunks if the budget can't
+  // otherwise be filled) was implemented and measured via
+  // `AI_EMBEDDINGS_MODEL=baai/bge-m3 npx tsx scripts/evaluate.ts
+  // --retrieval-only`: hit@5, MRR, evidence-recall, refusal-recall,
+  // false-refusal and the confidence h/m/l split were ALL bit-for-bit
+  // identical before and after (0.938 / 0.776 / 0.917 / 0.909 / 0.083 /
+  // 10-39-12). None of the 61 eval cases has 4+ above-cutoff, in-budget
+  // chunks from one page landing inside the current top-8, so the cap never
+  // fired on this set — the 2-cases-at-5/5 the task description measured are
+  // real but this harness has no page-diversity metric to show the cap
+  // helping (or hurting) them. Reverted per the "revert if it does not help"
+  // instruction rather than ship an unmeasured change; the diff is trivial
+  // to restore if a diversity metric is added to evaluate.ts.
 
   // Exact-match coverage of informative query tokens (stopwords removed)
   // against the top selected chunks. Fuzzy/prefix matches deliberately do NOT
@@ -631,6 +717,23 @@ const GENERIC_TITLE_TOKENS = new Set(['cli', 'install', 'setup', 'app', 'liara',
  *   !titleMatch || coverage < 0.5  20 / 5 of 7 / 15  (EP-ANS-04's proposal)
  * The last hedges half of ALL answers, which costs more UX than the 3 extra
  * catches buy. Widen it only alongside a larger eval set.
+ *
+ * DEFECT-1 wiring decision (measured, `npx tsx scripts/evaluate.ts
+ * --retrieval-only`, AI_EMBEDDINGS_MODEL=baai/bge-m3): downgrading
+ * `medium` -> `low` here inside gateConfidence/search() — i.e. treating this
+ * signal as a hard refusal rather than a hedge — was tried and reverted.
+ * Baseline: hit@5 0.896, false-refusal 0.083 (4/48), refusal-recall 0.909
+ * (10/11). With the downgrade wired in: hit@5/MRR/evidence-recall UNCHANGED,
+ * refusal-recall UNCHANGED at 0.909 (the one still-missed unsupported case is
+ * not evidenceIsWeak-flagged), and false-refusal MORE THAN DOUBLED to 0.188
+ * (9/48) — the 3 false alarms this function's own doc comment above already
+ * predicted (`!titleMatch: 5 flagged / 2 caught / 3 false alarms`) all landed
+ * on previously-correct answers. No metric improved and one regressed past
+ * its CI floor, so it stays UNWIRED from the confidence tier. It remains
+ * exactly what it always was: a free, deterministic, self-labelling signal
+ * for a CALLER (the orchestrator, which can hedge the answer-prompt instead
+ * of refusing outright) to use — the wiring this function's own name asks
+ * for, just at the hedge altitude, not the gate altitude.
  */
 export function evidenceIsWeak(r: RetrievalResult): boolean {
   if (r.confidence !== 'medium' || !r.chunks.length) return false;
