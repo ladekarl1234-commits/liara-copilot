@@ -558,6 +558,18 @@ export async function makePlan(
     const dropped = droppedPatchKeys(raw, parsed.data.statePatch);
     if (dropped.length) log('warn', 'plan_patch_partial', { dropped, route: route.model });
     const plan = parsed.data as AgentPlan;
+    // Language is DETECTED, never taken from the model. Script is an
+    // unambiguous, free signal — detectLanguage() counts Persian codepoints
+    // against Latin ones — and the model gets it wrong often enough to matter.
+    // Measured on the deployed app: 1 of 3 runs of the Persian question
+    // «چطور یک دیتابیس PostgreSQL روی لیارا بسازم؟» came back with
+    // `language: 'en'`, so the user was answered in ENGLISH, with the English
+    // canned refusal, for a question written entirely in Persian. There is no
+    // upside to trusting the model here: every string the user reads —
+    // greeting, clarification, refusal, degraded notice — is selected by this
+    // field, and the answer prompt's "reply in the same language" instruction
+    // keys off it too.
+    plan.language = signals.language;
     // deterministic signals win when the model missed them. Inherit the
     // session's platform ONLY when this message carries no product/database
     // signal of its own — otherwise a turn-1 "django" sticks to a turn-2

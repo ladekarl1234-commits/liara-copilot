@@ -8,7 +8,7 @@
 // good.
 //
 //   node scripts/probe-deployment.mjs --url https://<app>.vercel.app
-//   node scripts/probe-deployment.mjs --url ... --out evals/results/deployed-<id>.json
+//   node scripts/probe-deployment.mjs --url ... --out evals/deployed/<date>.json
 //   node scripts/probe-deployment.mjs --url ... --only smoke,latency
 //
 // Exit code is 1 when any REQUIRED check fails, so it works as a deploy gate.

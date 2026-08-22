@@ -41,7 +41,7 @@ the provider.
 ## 2. Retrieval quality
 
 Command: `AI_EMBEDDINGS_MODEL=baai/bge-m3 npx tsx scripts/evaluate.ts --retrieval-only`
-Artifact: [`evals/results/retrieval-2026-08-22-final.json`](../../../evals/results/retrieval-2026-08-22-final.json)
+Artifact: [`evals/results/retrieval-2026-08-22-05f25e6-dirty.json`](../../../evals/results/retrieval-2026-08-22-05f25e6-dirty.json)
 
 61 eval cases (48 sourced, 13 gate cases), corpus `7b64f0d`, 3,750 chunks.
 
@@ -153,7 +153,7 @@ cheaper in output tokens.
 ## 4. Latency on the deployed system
 
 Command: `node scripts/probe-deployment.mjs --url https://liara-copilot.vercel.app`
-Artifact: [`evals/results/deployed-2026-08-22-after.json`](../../../evals/results/deployed-2026-08-22-after.json)
+Artifact: [`evals/results/deployed-2026-08-22-after.json`](../../../evals/deployed/2026-08-22-after.json)
 
 The planner ran first, unbounded, on the critical path. Measured plan latency on
 the deployed app before any bound: **2779 / 2558 / 15636 / 15670 / 9445 ms** —
