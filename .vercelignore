@@ -2,7 +2,21 @@ node_modules
 .next
 .git
 .cache
+.playwright-cli
+
+# NEVER ship local dotenv files. Vercel injects its own environment; an uploaded
+# .env is loaded by Next at runtime and SILENTLY OVERRIDES it. This exact miss
+# put `OPENROUTER_MODEL=openrouter/free` — the dynamic router that lands on a
+# safety classifier — back into production after the code default had been
+# pinned, and 3 of 8 live turns answered "User Safety: safe" again. The judge
+# panel caught it; the deploy did not.
+.env
+.env.*
+!.env.example
+
+# the docs clone and the incremental embedding cache are build inputs, not runtime
 data/liara-docs
 data/index/embeddings.json
-.playwright-cli
+
+# stale screenshots from an earlier review round
 docs/reviews/round-001/screenshots
