@@ -322,8 +322,38 @@ export async function handleChatMessage({ message, sessionId, stateToken, reques
     emit({ type: 'stage', stage: 'checking' });
 
     // --- evidence gate ---
+    //
+    // The gate is the ONLY thing allowed to refuse, because it is the only
+    // thing that has seen the evidence. The planner sees the question and
+    // nothing else, so its `insufficient` / `unsupported` is a guess made
+    // before a single document was retrieved — and it used to be a veto.
+    //
+    // Measured, judge finding AQ-02: "How do I connect a Django app on Liara to
+    // a managed PostgreSQL database?" was refused in both languages with
+    // "I couldn't find a reliable answer to this in the official Liara docs"
+    // — while the answering page ranked FIRST at confidence `medium`
+    // (/paas/django/how-tos/connect-to-db/postgresql/, 22 chunks in the index).
+    // The same question refused on one run and answered on the next, which is
+    // most of what made the system look non-deterministic (AQ-03), and it is
+    // why an English phrasing refused where the Persian one answered (AQ-05):
+    // the varying component was the planner, not retrieval.
+    //
+    // A planner refusal is now a HINT that has to be seconded by the evidence.
+    // Genuinely out-of-scope questions still refuse, because retrieval returns
+    // low confidence for them — that is what the gate is for, and what
+    // refusal-recall in the eval measures.
     const gateFailed = retrieval.confidence === 'low' || !retrieval.chunks.length;
-    if (plan.action === 'insufficient' || plan.intent === 'unsupported' || gateFailed) {
+    const plannerWantsRefusal = plan.action === 'insufficient' || plan.intent === 'unsupported';
+    if (plannerWantsRefusal && !gateFailed) {
+      log('info', 'planner_refusal_overruled', {
+        requestId,
+        action: plan.action,
+        intent: plan.intent,
+        confidence: retrieval.confidence,
+        chunks: retrieval.chunks.length,
+      });
+    }
+    if (gateFailed) {
       // Fix and Guide REASON from intent — they must not collapse into a flat
       // "couldn't find it" just because retrieval was weak. If the plan seeded a
       // hypothesis ledger or a workflow checklist, run it: show the ranked
@@ -388,7 +418,12 @@ export async function handleChatMessage({ message, sessionId, stateToken, reques
       model: route.model,
       messages: answerMessages,
       maxTokens: 1400,
-      temperature: 0.2,
+      // 0, not 0.2. Judge finding AQ-03: the same question produced four
+      // materially different answers across four runs, two of them factually
+      // wrong. A grounded-RAG answer has no use for sampling diversity — the
+      // evidence is fixed, so the answer should be too, and an eval cannot
+      // certify an answer that changes every time it is asked.
+      temperature: 0,
       signal,
       onMeta: (meta) => { if (meta.model) m.actualModel = meta.model; },
     });
@@ -439,7 +474,14 @@ export async function handleChatMessage({ message, sessionId, stateToken, reques
     // real quality guard — verification, not the retrieval gate, is what
     // proves the answer was grounded. Still gated on turns===0 so a write can
     // never bake in personalization from a mid-conversation statePatch.
-    if (plan.intent === 'question' && session.turns === 0 && retrieval.confidence !== 'low' && preKey && v.unsupportedCount === 0) {
+    // v.checked, NOT just unsupportedCount===0. A verification that never RAN
+    // reports zero unsupported claims, so the old condition read "the verifier
+    // was skipped" as "the verifier passed" and cached the answer anyway —
+    // permanently, for every later asker of that question. Skips are not rare:
+    // the verifier is bounded by VERIFY_BUDGET_MS and skipped for short answers,
+    // and the deployed logs show verify_skipped with reason
+    // provider_error_or_unparsed. Judge finding COST-01.
+    if (plan.intent === 'question' && session.turns === 0 && retrieval.confidence !== 'low' && preKey && v.skipReason !== 'failed' && v.unsupportedCount === 0) {
       answerCache.set(preKey, { text: answer, citations });
       while (answerCache.size > ANSWER_CACHE_MAX) answerCache.delete(answerCache.keys().next().value as string);
     }

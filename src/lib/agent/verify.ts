@@ -17,6 +17,19 @@ const VerifySchema = z.object({
 
 export interface VerifyResult {
   checked: boolean;
+  /**
+   * Why the check did not run. `'failed'` means it was ATTEMPTED and broke —
+   * the only case a caller must read as "grounding is UNKNOWN" rather than
+   * "grounding was not required". `'not-applicable'` covers the benign skips:
+   * the feature is off, there is no provider, the answer is too short to carry
+   * a checkable claim, or the client already went away.
+   *
+   * Judge finding COST-01: the answer cache keyed on `unsupportedCount === 0`,
+   * which a never-run verifier also reports, so "the verifier broke" was read
+   * as "the verifier passed" and the unverified answer was cached permanently
+   * for every later asker of that question.
+   */
+  skipReason?: 'not-applicable' | 'failed';
   unsupportedCount: number;
   note?: string;
   usage: Usage;
@@ -29,7 +42,8 @@ export async function verifyAnswer(
   signal?: AbortSignal,
 ): Promise<VerifyResult> {
   const cfg = config();
-  const skip: VerifyResult = { checked: false, unsupportedCount: 0, usage: { inputTokens: 0, outputTokens: 0 } };
+  const skip: VerifyResult = { checked: false, unsupportedCount: 0, skipReason: 'not-applicable', usage: { inputTokens: 0, outputTokens: 0 } };
+  const failed = (usage = { inputTokens: 0, outputTokens: 0 }): VerifyResult => ({ checked: false, unsupportedCount: 0, skipReason: 'failed', usage });
   if (cfg.VERIFY_CLAIMS !== 'on' || !provider || answer.length < 200 || !evidence.length) return skip;
   if (signal?.aborted) return skip; // client already gone — don't spend a call
 
@@ -50,7 +64,7 @@ export async function verifyAnswer(
       signal,
     });
     const parsed = VerifySchema.safeParse(extractJson(res.text));
-    if (!parsed.success) return { ...skip, usage: res.usage };
+    if (!parsed.success) return failed(res.usage);
     const { unsupported, note } = parsed.data;
     return {
       checked: true,
@@ -59,7 +73,7 @@ export async function verifyAnswer(
       usage: res.usage,
     };
   } catch {
-    return skip;
+    return failed();
   }
 }
 

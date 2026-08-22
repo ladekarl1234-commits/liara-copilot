@@ -352,9 +352,23 @@ export function fallbackPlan(message: string, s: DeterministicSignals, state: Se
     retrievalQueries: s.isGreeting
       ? []
       : [((continuingFix && (state.context.knownError ?? active!.problem)) || message).slice(0, 200)],
+    // A platform filter and a keyword-guessed product filter must never be
+    // combined: every platform (nextjs, django, ...) lives under `paas`, so
+    // pairing one with any other product asks for chunks that cannot exist.
+    //
+    // Judge finding AQ-02, root cause. "How do I connect a Django app on Liara
+    // to a managed PostgreSQL database?" sets platform=django from the literal
+    // word "Django", and product=dbaas from the literal word "database". The
+    // pair {platform:'django', product:'dbaas'} matches NOTHING — measured:
+    //   {platform:django, product:dbaas}  -> confidence low,    gold ABSENT
+    //   {platform:django}                 -> confidence medium, gold rank 1
+    //   {}                                -> confidence medium, gold rank 1
+    // so the system refused a question whose answering page it ranks first.
+    // The platform is the precise signal (it matches a literal framework name);
+    // the product is a keyword guess. When they disagree, keep the precise one.
     filters: {
       ...(platform ? { platform } : {}),
-      ...(s.product && s.product !== 'paas' ? { product: s.product } : {}),
+      ...(!platform && s.product && s.product !== 'paas' ? { product: s.product } : {}),
     },
   };
 }
@@ -579,6 +593,17 @@ export async function makePlan(
       const inherited = ownTopic || plan.filters.product ? undefined : state.context.platform;
       const p = signals.platform ?? inherited;
       if (p) plan.filters.platform = p;
+    }
+    // Same contradiction guard as fallbackPlan's, applied to whatever the model
+    // produced: a platform only exists under `paas`, so {platform, product:X}
+    // for any other X selects the empty set and the turn refuses with the
+    // answer sitting at rank 1. See AQ-02 in fallbackPlan above.
+    if (plan.filters.platform && plan.filters.product && plan.filters.product !== 'paas') {
+      log('info', 'plan_filters_contradiction', {
+        platform: plan.filters.platform,
+        droppedProduct: plan.filters.product,
+      });
+      delete plan.filters.product;
     }
     // Deterministic flow-control also wins: an unresolved ledger owns a "still
     // broken" follow-up even if the model called it a plain question, which
